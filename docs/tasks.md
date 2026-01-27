@@ -1,0 +1,462 @@
+# Task Design
+
+Tasks are the atomic unit of work in AIDF. A well-designed task gives AI everything it needs to execute autonomously and produce consistent results.
+
+---
+
+## Task Anatomy
+
+```markdown
+# TASK
+
+## Goal
+[One clear sentence - what must be accomplished]
+
+## Task Type
+[component | refactor | test | docs | architecture | bugfix]
+
+## Suggested Roles
+- [primary role]
+- [secondary role if needed]
+
+## Scope
+
+### Allowed
+- [paths that may be modified]
+
+### Forbidden
+- [paths that must NOT be modified]
+
+## Requirements
+[Detailed specifications]
+
+## Definition of Done
+- [ ] [Verifiable criterion 1]
+- [ ] [Verifiable criterion 2]
+- [ ] [Quality gate, e.g., "pnpm test passes"]
+
+## Notes
+[Additional context, warnings, tips]
+```
+
+---
+
+## Section Deep Dive
+
+### Goal
+
+The goal is a **single sentence** that answers: "What will be true when this task is complete?"
+
+**Bad Goals:**
+
+```markdown
+## Goal
+Work on the button component and make it better.
+```
+- Vague
+- No clear completion state
+- "Better" is subjective
+
+**Good Goals:**
+
+```markdown
+## Goal
+Create a Button component with primary, secondary, and tertiary variants that supports icons and loading states.
+```
+- Specific deliverable
+- Clear scope
+- Measurable completion
+
+### Task Type
+
+Categorizing tasks helps AI understand the nature of the work:
+
+| Type | Description | Typical Roles |
+|------|-------------|---------------|
+| `component` | Create new UI component | developer, tester |
+| `refactor` | Restructure existing code | architect, developer |
+| `test` | Add or improve tests | tester |
+| `docs` | Documentation work | documenter |
+| `architecture` | System design, tooling | architect |
+| `bugfix` | Fix specific bug | developer |
+
+### Scope
+
+**This is critical.** Scope defines the boundaries of what AI can touch.
+
+```markdown
+## Scope
+
+### Allowed
+- src/components/Button/**
+- src/components/index.ts (to add export)
+- tests/components/Button.test.tsx
+
+### Forbidden
+- src/core/**
+- src/utils/** (use existing utils, don't modify)
+- Any configuration files
+- package.json
+```
+
+**Rules:**
+
+1. If it's not in `Allowed`, it's forbidden
+2. Be as specific as possible
+3. Use glob patterns for directories: `src/components/Button/**`
+4. Explicitly list single files when needed
+
+### Requirements
+
+This is where you provide detailed specifications. Be explicit about:
+
+**For Components:**
+
+```markdown
+## Requirements
+
+### Props API
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `variant` | `'primary' \| 'secondary' \| 'tertiary'` | `'primary'` | Visual style |
+| `size` | `'sm' \| 'md' \| 'lg'` | `'md'` | Button size |
+| `loading` | `boolean` | `false` | Shows loading spinner |
+| `disabled` | `boolean` | `false` | Disables interaction |
+| `leadingIcon` | `ReactNode` | - | Icon before text |
+| `trailingIcon` | `ReactNode` | - | Icon after text |
+
+### Behavior
+
+- When `loading` is true, show spinner and disable button
+- Forward all standard button HTML attributes
+- Support `as` prop for polymorphism (render as `<a>` for links)
+
+### Styling
+
+- Use CSS custom properties from design tokens
+- Support all interactive states (hover, active, focus, disabled)
+- Follow BEM-like naming: `.pt-Button`, `.pt-Button--primary`
+```
+
+**For Refactoring:**
+
+```markdown
+## Requirements
+
+### Current State
+[Describe what exists now]
+
+### Target State
+[Describe what should exist after]
+
+### Constraints
+- No API changes (internal refactor only)
+- Must maintain backward compatibility
+- Performance must not degrade
+```
+
+**For Bug Fixes:**
+
+```markdown
+## Requirements
+
+### Bug Description
+[What is happening]
+
+### Expected Behavior
+[What should happen]
+
+### Reproduction Steps
+1. [Step 1]
+2. [Step 2]
+3. [Step 3]
+
+### Root Cause (if known)
+[Analysis of why this happens]
+```
+
+### Definition of Done
+
+Every criterion must be **verifiable**. If you can't check it, it shouldn't be here.
+
+**Bad Criteria:**
+
+```markdown
+## Definition of Done
+- Code is clean
+- Component works correctly
+- Good test coverage
+```
+
+**Good Criteria:**
+
+```markdown
+## Definition of Done
+- [ ] Component renders without errors
+- [ ] All props from the API table are implemented
+- [ ] TypeScript compilation passes (`pnpm typecheck`)
+- [ ] ESLint passes with no warnings (`pnpm lint`)
+- [ ] Tests exist for: default render, all variants, all sizes, loading state, disabled state
+- [ ] Tests pass (`pnpm test`)
+- [ ] No accessibility violations (test with `expectNoA11yViolations`)
+- [ ] Storybook story exists with controls for all props
+```
+
+### Notes
+
+Use this section for:
+
+- Warnings about gotchas
+- References to related code
+- Decisions that were made
+- Context that doesn't fit elsewhere
+
+```markdown
+## Notes
+
+- The existing `Icon` component should be used for loading spinner
+- Follow the pattern established in `src/components/Badge/` for structure
+- Design tokens for colors are in `src/tokens/colors.css`
+- Accessibility: Ensure button is focusable and announces loading state
+```
+
+---
+
+## Task Templates by Type
+
+### Component Task
+
+```markdown
+# TASK
+
+## Goal
+Create the [ComponentName] component with [key features].
+
+## Task Type
+component
+
+## Suggested Roles
+- developer
+- tester
+
+## Scope
+### Allowed
+- src/components/[ComponentName]/**
+- src/components/index.ts
+- stories/[ComponentName].stories.tsx
+
+### Forbidden
+- src/core/**
+- src/tokens/**
+
+## Requirements
+
+### File Structure
+Create:
+- [ComponentName].tsx
+- [ComponentName].types.ts
+- [ComponentName].constants.ts
+- [component-name].css
+- [ComponentName].test.tsx
+- index.ts
+
+### Props API
+[Table of props]
+
+### Behavior
+[Behavioral specifications]
+
+### Styling
+[CSS requirements]
+
+## Definition of Done
+- [ ] All files created following project structure
+- [ ] All props implemented and typed
+- [ ] CSS uses design tokens only
+- [ ] Tests cover: render, props, interactions, a11y
+- [ ] `pnpm quality:fast` passes
+- [ ] Storybook story with all variants
+
+## Notes
+[Additional context]
+```
+
+### Refactor Task
+
+```markdown
+# TASK
+
+## Goal
+Refactor [area] to [improvement].
+
+## Task Type
+refactor
+
+## Suggested Roles
+- architect
+- developer
+
+## Scope
+### Allowed
+- [specific paths]
+
+### Forbidden
+- [paths to protect]
+
+## Requirements
+
+### Current State
+[What exists now and its problems]
+
+### Target State
+[What should exist after]
+
+### Migration Strategy
+[How to get from current to target]
+
+### Constraints
+- No API changes
+- No functionality changes
+- Tests must continue passing
+
+## Definition of Done
+- [ ] All changes within scope
+- [ ] No API changes (same exports, same props)
+- [ ] All existing tests pass
+- [ ] `pnpm quality:fast` passes
+- [ ] No performance regression
+
+## Notes
+[Context about why this refactor]
+```
+
+### Test Task
+
+```markdown
+# TASK
+
+## Goal
+Improve test coverage for [area] to [target]%.
+
+## Task Type
+test
+
+## Suggested Roles
+- tester
+
+## Scope
+### Allowed
+- tests/**
+- src/**/*.test.tsx
+
+### Forbidden
+- Any non-test files
+
+## Requirements
+
+### Current Coverage
+[Current metrics]
+
+### Target Coverage
+[Target metrics]
+
+### Required Test Cases
+- [ ] [Test case 1]
+- [ ] [Test case 2]
+- [ ] [Edge case 1]
+
+### Testing Patterns
+[Reference to test utilities, patterns to follow]
+
+## Definition of Done
+- [ ] Coverage meets target
+- [ ] All new tests pass
+- [ ] No flaky tests introduced
+- [ ] Tests follow project patterns
+- [ ] `pnpm test` passes
+
+## Notes
+[Any special testing considerations]
+```
+
+---
+
+## Anti-Patterns
+
+### Vague Scope
+
+```markdown
+## Scope
+### Allowed
+- src/
+```
+
+This allows modification of anything in `src/`. Be specific.
+
+### Unmeasurable Done
+
+```markdown
+## Definition of Done
+- Code is good quality
+```
+
+What is "good quality"? Replace with specific checks.
+
+### Missing Context
+
+```markdown
+## Requirements
+Build a form.
+```
+
+What fields? What validation? What submission behavior? Provide details.
+
+### Overloaded Tasks
+
+```markdown
+## Goal
+Build the authentication system including login, registration, password reset, OAuth integration, and user profile management.
+```
+
+This is too much. Break into multiple focused tasks.
+
+---
+
+## Tips
+
+### One Task, One Purpose
+
+A task should have one clear purpose. If you find yourself writing "and" multiple times in the goal, split it.
+
+### Include File References
+
+```markdown
+## Notes
+- Follow the pattern in `src/components/Button/` for structure
+- Use utilities from `src/utils/form-validation.ts`
+- Reference design at `docs/designs/login-form.png`
+```
+
+### Specify Output Format
+
+When the output format matters:
+
+```markdown
+## Requirements
+
+### Output Format
+The component must export:
+\`\`\`typescript
+export { LoginForm } from "./LoginForm";
+export type { LoginFormProps } from "./LoginForm.types";
+\`\`\`
+```
+
+### Link Related Tasks
+
+```markdown
+## Notes
+- Depends on: Task #003 (design tokens must exist first)
+- Blocks: Task #007 (auth flow needs this form)
+```
