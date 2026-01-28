@@ -31,7 +31,10 @@ export class Executor {
     this.cwd = cwd;
     this.git = simpleGit(cwd);
 
-    // Merge options con defaults
+    // Merge options con defaults (filter out undefined values from options)
+    const filteredOptions = Object.fromEntries(
+      Object.entries(options).filter(([_, v]) => v !== undefined)
+    );
     this.options = {
       maxIterations: config.execution?.max_iterations ?? 50,
       maxConsecutiveFailures: config.execution?.max_consecutive_failures ?? 3,
@@ -41,7 +44,7 @@ export class Executor {
       autoPush: config.permissions?.auto_push ?? false,
       dryRun: false,
       verbose: false,
-      ...options,
+      ...filteredOptions,
     };
 
     // Crear provider
