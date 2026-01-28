@@ -460,3 +460,120 @@ export type { LoginFormProps } from "./LoginForm.types";
 - Depends on: Task #003 (design tokens must exist first)
 - Blocks: Task #007 (auth flow needs this form)
 ```
+
+---
+
+## Blocked Tasks and Resuming
+
+When a task execution encounters a blocker that requires human intervention, AIDF automatically marks the task as `BLOCKED` and saves the execution state in the task file.
+
+### Blocked Status Format
+
+When a task is blocked, AIDF adds a status section to the task file:
+
+```markdown
+## Status: BLOCKED
+
+### Execution Log
+- **Started:** 2024-01-01T10:00:00.000Z
+- **Iterations:** 5
+- **Blocked at:** 2024-01-01T11:00:00.000Z
+
+### Blocking Issue
+\`\`\`
+Missing API key configuration. The task requires an API key to be set in the environment, but it was not found.
+\`\`\`
+
+### Files Modified
+- \`src/api/client.ts\`
+- \`src/config/settings.ts\`
+
+---
+@developer: Review and provide guidance, then run \`aidf run --resume task.md\`
+```
+
+### Resuming a Blocked Task
+
+After addressing the blocking issue or providing guidance, you can resume the task using the `--resume` flag:
+
+```bash
+aidf run --resume .ai/tasks/my-task.md
+```
+
+Or let AIDF auto-select from blocked tasks:
+
+```bash
+aidf run --resume
+```
+
+**What happens when resuming:**
+
+1. AIDF loads the previous execution state (iteration count, files modified, blocking issue)
+2. Execution continues from the next iteration after the block
+3. The blocking issue is included in the prompt context so the AI understands what was wrong
+4. Previous files modified are tracked and preserved
+5. Resume attempt history is recorded in the task file
+
+### Resume Attempt History
+
+AIDF tracks resume attempts in the task file:
+
+```markdown
+### Resume Attempt History
+- **Resumed at:** 2024-01-01T12:00:00.000Z
+- **Previous attempt:** Iteration 5, blocked at 2024-01-01T11:00:00.000Z
+- **Completed at:** 2024-01-01T13:00:00.000Z
+- **Status:** completed
+- **Iterations in this attempt:** 3
+```
+
+### Task Completion After Resume
+
+When a task completes after being resumed, the BLOCKED status is replaced with a completion status and execution history:
+
+```markdown
+## Execution History
+
+### Original Block
+- **Started:** 2024-01-01T10:00:00.000Z
+- **Blocked at:** 2024-01-01T11:00:00.000Z
+- **Iterations before block:** 5
+- **Blocking issue:** Missing API key configuration...
+
+### Resume and Completion
+- **Resumed at:** 2024-01-01T12:00:00.000Z
+- **Completed at:** 2024-01-01T13:00:00.000Z
+- **Total iterations:** 8
+- **Files modified:** 5 files
+
+---
+
+## Status: ✅ COMPLETED
+```
+
+### Best Practices for Resuming
+
+1. **Review the blocking issue** - Understand what went wrong before resuming
+2. **Address the blocker** - Fix the issue or provide clear guidance in the task file
+3. **Verify context** - Check that files modified in the previous attempt are still relevant
+4. **Use resume history** - Review previous resume attempts to understand patterns
+
+### When Tasks Get Blocked
+
+Tasks are automatically marked as BLOCKED when:
+
+- The AI explicitly signals `<BLOCKED: reason>` in its output
+- Maximum iterations are reached
+- Maximum consecutive failures are reached
+- Critical errors occur that prevent continuation
+
+### Error Handling
+
+If you try to resume a task that is not blocked:
+
+```bash
+$ aidf run --resume .ai/tasks/normal-task.md
+Error: Task is not blocked. Cannot use --resume on a task that is not in BLOCKED status.
+```
+
+Only tasks with `## Status: BLOCKED` can be resumed.
