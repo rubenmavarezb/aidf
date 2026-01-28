@@ -14,6 +14,7 @@ import type {
 } from '../types/index.js';
 import { executeTask } from './executor.js';
 import { Logger } from '../utils/logger.js';
+import { NotificationService } from '../utils/notifications.js';
 
 const CONFIG_FILES = ['config.yml', 'config.yaml', 'config.json'];
 
@@ -28,6 +29,7 @@ export class Watcher {
   private queue: string[] = [];
   private processing = false;
   private stopResolve: (() => void) | null = null;
+  private notificationService: NotificationService | null = null;
 
   constructor(projectRoot: string, options: Partial<WatcherOptions> = {}) {
     this.projectRoot = projectRoot;
@@ -73,6 +75,7 @@ export class Watcher {
     this.state.startedAt = new Date();
 
     await this.loadConfig();
+    this.notificationService = new NotificationService(this.config?.notifications, this.logger);
     this.setupFileWatcher();
     await this.scanExistingTasks();
 
@@ -414,6 +417,8 @@ export class Watcher {
         `Iterations: ${result.iterations}`,
       ].join('\n'));
     }
+
+    this.notificationService?.notifyResult(result).catch(() => {});
   }
 
   private printSummary(): void {

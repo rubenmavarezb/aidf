@@ -15,6 +15,7 @@ import { buildIterationPrompt } from './providers/claude-cli.js';
 import { ScopeGuard } from './safety.js';
 import { Validator } from './validator.js';
 import { Logger } from '../utils/logger.js';
+import { NotificationService } from '../utils/notifications.js';
 
 export class Executor {
   private options: ExecutorOptions;
@@ -24,6 +25,7 @@ export class Executor {
   private git: SimpleGit;
   private state: ExecutorState;
   private logger: Logger;
+  private notificationService: NotificationService;
 
   constructor(
     config: AidfConfig,
@@ -66,6 +68,9 @@ export class Executor {
 
     // Initialize logger (use provided logger or create default)
     this.logger = options.logger ?? new Logger({ verbose: this.options.verbose });
+
+    // Initialize notification service
+    this.notificationService = new NotificationService(config.notifications, this.logger);
   }
 
   /**
@@ -305,7 +310,7 @@ export class Executor {
       this.log('Pushed changes to remote');
     }
 
-    return {
+    const executorResult: ExecutorResult = {
       success: this.state.status === 'completed',
       status: this.state.status,
       iterations: this.state.iteration,
@@ -314,6 +319,14 @@ export class Executor {
       blockedReason: this.state.status === 'blocked' ? this.state.lastError : undefined,
       taskPath,
     };
+
+    try {
+      await this.notificationService.notifyResult(executorResult);
+    } catch {
+      // Notification errors should never affect execution
+    }
+
+    return executorResult;
   }
 
   /**
@@ -587,6 +600,21 @@ function getDefaultConfig(): AidfConfig {
     git: {
       commit_prefix: 'aidf:',
       branch_prefix: 'aidf/',
+    },
+    notifications: {
+      level: 'all',
+      desktop: { enabled: false },
+      slack: { enabled: false, webhook_url: '' },
+      discord: { enabled: false, webhook_url: '' },
+      email: {
+        enabled: false,
+        smtp_host: '',
+        smtp_port: 587,
+        smtp_user: '',
+        smtp_pass: '',
+        from: '',
+        to: '',
+      },
     },
   };
 }

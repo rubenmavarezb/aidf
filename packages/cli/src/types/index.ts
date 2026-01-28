@@ -7,6 +7,7 @@ export interface AidfConfig {
   permissions: PermissionsConfig;
   validation: ValidationConfig;
   git: GitConfig;
+  notifications?: NotificationsConfig;
 }
 
 export interface ProviderConfig {
@@ -36,6 +37,55 @@ export interface ValidationConfig {
 export interface GitConfig {
   commit_prefix: string;
   branch_prefix: string;
+}
+
+// === Notification Types ===
+
+export type NotificationLevel = 'all' | 'errors' | 'blocked';
+
+export interface DesktopNotificationConfig {
+  enabled: boolean;
+}
+
+export interface SlackNotificationConfig {
+  enabled: boolean;
+  webhook_url: string;
+}
+
+export interface DiscordNotificationConfig {
+  enabled: boolean;
+  webhook_url: string;
+}
+
+export interface EmailNotificationConfig {
+  enabled: boolean;
+  smtp_host: string;
+  smtp_port: number;
+  smtp_user: string;
+  smtp_pass: string;
+  from: string;
+  to: string;
+}
+
+export interface NotificationsConfig {
+  level: NotificationLevel;
+  desktop?: DesktopNotificationConfig;
+  slack?: SlackNotificationConfig;
+  discord?: DiscordNotificationConfig;
+  email?: EmailNotificationConfig;
+}
+
+export type NotificationEventType = 'completed' | 'blocked' | 'failed';
+
+export interface NotificationEvent {
+  type: NotificationEventType;
+  taskPath: string;
+  taskName: string;
+  iterations: number;
+  filesModified: string[];
+  error?: string;
+  blockedReason?: string;
+  timestamp: Date;
 }
 
 // === Task Types ===

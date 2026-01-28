@@ -22,9 +22,17 @@ Integrar AIDF con pre-commit hooks para validación automática.
 6. Integración con pre-commit (Python)
 
 ## Definition of Done
-- [ ] `aidf hooks install` configura hooks
-- [ ] Hooks validan cambios contra scope
-- [ ] Documentación de setup
-- [ ] Ejemplo con husky
+- [x] `aidf hooks install` configura hooks
+- [x] Hooks validan cambios contra scope
+- [x] Documentación de setup
+- [x] Ejemplo con husky
 
-## Status: 🔵 Ready
+## Status: ✅ COMPLETED
+- **Completed:** 2026-01-28
+- **Agent:** Claude Opus 4.5
+- **Files Created:**
+  - `packages/cli/src/commands/hooks.ts` - Main hooks command
+  - `packages/cli/src/commands/hooks.test.ts` - 15 unit tests
+  - `docs/hooks.md` - Full documentation with husky/pre-commit examples
+- **Files Modified:**
+  - `packages/cli/src/index.ts` - Registered hooks command
