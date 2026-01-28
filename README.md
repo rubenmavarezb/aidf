@@ -1,5 +1,7 @@
 # AIDF - AI-Integrated Development Framework
 
+[![CI](https://github.com/rubenmavarezb/aidf/actions/workflows/test.yml/badge.svg)](https://github.com/rubenmavarezb/aidf/actions/workflows/test.yml)
+
 A framework for structured, consistent, and safe AI-assisted software development.
 
 ## What is AIDF?
