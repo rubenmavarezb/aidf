@@ -113,9 +113,11 @@ export class Executor {
           break;
         }
 
+        // For claude-cli, always skip its built-in permissions since we have our own ScopeGuard
+        // For API providers, this flag is ignored anyway
         const result = await this.provider.execute(prompt, {
           timeout: this.options.timeoutPerIteration * 1000,
-          dangerouslySkipPermissions: this.options.scopeEnforcement === 'permissive',
+          dangerouslySkipPermissions: true,
         });
 
         // Verificar scope violations
