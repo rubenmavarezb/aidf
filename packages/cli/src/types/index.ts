@@ -302,6 +302,50 @@ export interface WatcherState {
   processedTasks: Map<string, number>;
 }
 
+// === Parallel Execution Types ===
+
+export interface TaskDependency {
+  taskPath: string;
+  dependsOn: string[];
+  reason: string;
+}
+
+export interface ParallelExecutorOptions {
+  concurrency: number;
+  dryRun: boolean;
+  verbose: boolean;
+  quiet: boolean;
+  maxIterations?: number;
+  resume?: boolean;
+  logFormat?: 'text' | 'json';
+  logFile?: string;
+  logRotate?: boolean;
+  onTaskStart?: (taskPath: string) => void;
+  onTaskComplete?: (taskPath: string, result: ExecutorResult) => void;
+}
+
+export interface ParallelTaskResult {
+  taskPath: string;
+  taskName: string;
+  result: ExecutorResult;
+  startedAt: Date;
+  completedAt: Date;
+}
+
+export interface ParallelExecutionResult {
+  success: boolean;
+  totalTasks: number;
+  completed: number;
+  failed: number;
+  blocked: number;
+  skipped: number;
+  tasks: ParallelTaskResult[];
+  dependencies: TaskDependency[];
+  fileConflicts: string[];
+  totalIterations: number;
+  totalFilesModified: string[];
+}
+
 // === Logging Types ===
 
 export interface LogContext {
