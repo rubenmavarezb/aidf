@@ -15,7 +15,7 @@
 | 009-command-init | ✅ | 2026-01-27 |
 | 010-command-task | ✅ | 2026-01-27 |
 
-**Total tests:** 231 passing
+**Total tests:** 244 passing
 
 ---
 
@@ -30,18 +30,18 @@
 
 ---
 
-## Fase 3: Features
+## Fase 3: Features ✅ COMPLETADA
 
 | Task | Auto-Mode | Dependencias | Prioridad | Status |
 |------|-----------|--------------|-----------|--------|
 | 015-command-status | ✅ SÍ | ninguna | Alta | ✅ Done |
 | 016-command-watch | ⚠️ PARCIAL | ninguna | Media | ✅ Done |
 | 017-resume-blocked | ✅ SÍ | ninguna | Alta | ✅ Done |
-| 018-parallel-tasks | ⚠️ PARCIAL | ninguna | Media | ⏳ |
+| 018-parallel-tasks | ⚠️ PARCIAL | ninguna | Media | ✅ Done |
 
 ---
 
-## Fase 4: Integraciones
+## Fase 4: Integraciones ✅ COMPLETADA
 
 | Task | Auto-Mode | Dependencias | Prioridad | Status |
 |------|-----------|--------------|-----------|--------|
@@ -51,7 +51,7 @@
 
 ---
 
-## Fase 5: UX Improvements
+## Fase 5: UX Improvements ✅ COMPLETADA
 
 | Task | Auto-Mode | Dependencias | Prioridad | Status |
 |------|-----------|--------------|-----------|--------|
@@ -137,7 +137,7 @@ Fase 3 (Features) - Independientes
 - [x] 015-command-status (2026-01-28)
 - [x] 016-command-watch (2026-01-28)
 - [x] 017-resume-blocked (2026-01-28)
-- [ ] 018-parallel-tasks
+- [x] 018-parallel-tasks (2026-01-28)
 
 ### Fase 4: Integraciones
 - [x] ~~019-vscode-extension~~ (Cancelled)
