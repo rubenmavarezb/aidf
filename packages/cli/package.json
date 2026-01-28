@@ -1,5 +1,5 @@
 {
-  "name": "@aidf/cli",
+  "name": "aidf",
   "version": "0.1.0",
   "description": "AI-Integrated Development Framework CLI",
   "type": "module",
@@ -47,7 +47,19 @@
     "cli",
     "development",
     "automation",
-    "claude"
+    "claude",
+    "anthropic",
+    "aidf"
   ],
-  "license": "MIT"
+  "license": "MIT",
+  "author": "rubenmavarezb",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rubenmavarezb/aidf.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://github.com/rubenmavarezb/aidf#readme",
+  "bugs": {
+    "url": "https://github.com/rubenmavarezb/aidf/issues"
+  }
 }
