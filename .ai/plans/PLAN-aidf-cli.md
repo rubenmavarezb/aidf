@@ -15,7 +15,7 @@
 | 009-command-init | ✅ | 2026-01-27 |
 | 010-command-task | ✅ | 2026-01-27 |
 
-**Total tests:** 163 passing
+**Total tests:** 231 passing
 
 ---
 
@@ -35,7 +35,7 @@
 | Task | Auto-Mode | Dependencias | Prioridad | Status |
 |------|-----------|--------------|-----------|--------|
 | 015-command-status | ✅ SÍ | ninguna | Alta | ✅ Done |
-| 016-command-watch | ⚠️ PARCIAL | ninguna | Media | ⏳ |
+| 016-command-watch | ⚠️ PARCIAL | ninguna | Media | ✅ Done |
 | 017-resume-blocked | ✅ SÍ | ninguna | Alta | ✅ Done |
 | 018-parallel-tasks | ⚠️ PARCIAL | ninguna | Media | ⏳ |
 
@@ -46,8 +46,8 @@
 | Task | Auto-Mode | Dependencias | Prioridad | Status |
 |------|-----------|--------------|-----------|--------|
 | 019-vscode-extension | ⚠️ PARCIAL | ninguna | Media | ⏳ |
-| 020-github-action | ✅ SÍ | 011 | Media | ⏳ |
-| 021-pre-commit-hooks | ✅ SÍ | ninguna | Baja | ⏳ |
+| 020-github-action | ✅ SÍ | 011 | Media | ✅ Done |
+| 021-pre-commit-hooks | ✅ SÍ | ninguna | Baja | ✅ Done |
 
 ---
 
@@ -57,7 +57,7 @@
 |------|-----------|--------------|-----------|--------|
 | 022-progress-bar | ✅ SÍ | ninguna | Media | ✅ Done |
 | 023-structured-logs | ✅ SÍ | ninguna | Baja | ✅ Done |
-| 024-notifications | ⚠️ PARCIAL | ninguna | Baja | ⏳ |
+| 024-notifications | ⚠️ PARCIAL | ninguna | Baja | ✅ Done |
 
 ---
 
@@ -135,19 +135,19 @@ Fase 3 (Features) - Independientes
 
 ### Fase 3: Features
 - [x] 015-command-status (2026-01-28)
-- [ ] 016-command-watch
+- [x] 016-command-watch (2026-01-28)
 - [x] 017-resume-blocked (2026-01-28)
 - [ ] 018-parallel-tasks
 
 ### Fase 4: Integraciones
 - [ ] 019-vscode-extension
-- [ ] 020-github-action
-- [ ] 021-pre-commit-hooks
+- [x] 020-github-action (2026-01-28)
+- [x] 021-pre-commit-hooks (2026-01-28)
 
 ### Fase 5: UX
 - [x] 022-progress-bar (2026-01-28)
 - [x] 023-structured-logs (2026-01-28)
-- [ ] 024-notifications
+- [x] 024-notifications (2026-01-28)
 
 ### Fase 6: Framework Documentation Enhancement
 - [x] 025-agents-production-structure (2026-01-28)
