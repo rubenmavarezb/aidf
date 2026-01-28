@@ -88,6 +88,7 @@ cp .ai/templates/TASK.template.md .ai/tasks/my-first-task.md
 - [Defining Roles](./docs/roles.md) - Creating specialized AI personas
 - [Task Design](./docs/tasks.md) - Writing effective task prompts
 - [Best Practices](./docs/best-practices.md) - Patterns that work
+- [**Integrations Guide**](./docs/integrations.md) - Using AIDF with Claude Code, Cursor, and other tools
 
 ## Examples
 
@@ -118,11 +119,10 @@ Developer: *Reviews and merges*
 
 AIDF works with any AI assistant that accepts text prompts:
 
-- Claude (Anthropic)
-- GPT-4 (OpenAI)
-- Cursor
-- GitHub Copilot Chat
-- Any LLM-based coding assistant
+- **Claude Code** - Full integration with autonomous execution ([guide](./docs/integrations.md#claude-code-integration))
+- **Cursor** - Rules template included ([guide](./docs/integrations.md#cursor-integration))
+- **GitHub Copilot** - Instructions template ([guide](./docs/integrations.md#github-copilot-integration))
+- **Any LLM** - Prompt templates for API usage ([guide](./docs/integrations.md#generic-llm-integration-api))
 
 ## License
 

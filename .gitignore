@@ -8,11 +8,18 @@ Thumbs.db
 *.swp
 *.swo
 
-# Node (if scripts are added later)
+# Node
 node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# pnpm
+.pnpm-store/
+
+# Build
+dist/
+*.tsbuildinfo
 
 # Misc
 *.log

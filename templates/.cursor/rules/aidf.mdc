@@ -1,0 +1,62 @@
+---
+description: AIDF Integration - AI-Integrated Development Framework
+globs: **/*
+alwaysApply: true
+---
+
+# AIDF Integration
+
+This project uses AIDF (AI-Integrated Development Framework) for structured AI-assisted development.
+
+## Context Loading
+
+When working on this project:
+
+1. **Always read `.ai/AGENTS.md`** first for:
+   - Project overview and architecture
+   - Technology stack and conventions
+   - Quality standards and boundaries
+   - Available commands
+
+2. This is your **primary source of truth** for how the project works.
+
+## Task Execution
+
+When asked to execute a task file from `.ai/tasks/`:
+
+1. **Read the task file completely** before starting
+2. **Load the suggested role** from `.ai/roles/{role}.md`
+3. **STRICTLY follow the Scope section:**
+   - ✅ Only modify files matching `Allowed` patterns
+   - ❌ Never touch files matching `Forbidden` patterns
+   - ⚠️ Ask before modifying `Ask Before` files
+4. **Implement the Requirements** as specified
+5. **Verify each Definition of Done item** before completing
+6. **Update task status** when done:
+   - Add `## Status: ✅ COMPLETED` with date
+   - Or `## Status: ⚠️ BLOCKED` with reason if stuck
+
+## Role Behavior
+
+When a role file is loaded from `.ai/roles/`, adopt:
+
+- The **Identity** section as your persona
+- The **Expertise** areas as your knowledge focus
+- The **Constraints** as hard rules you cannot break
+- The **Quality Criteria** as your success metrics
+
+## Completion Signals
+
+Use these signals to communicate status:
+
+- `<TASK_COMPLETE>` - All Definition of Done items are met
+- `<BLOCKED: reason>` - Cannot proceed, explain why
+- `<SCOPE_VIOLATION: file>` - Attempted to modify forbidden file
+
+## Important Rules
+
+1. **Never modify without reading AGENTS.md** - Context first, always
+2. **Scope is law** - If a file isn't in Allowed, don't touch it
+3. **Definition of Done is objective** - Don't claim done until ALL items pass
+4. **Document blockers** - If stuck, explain clearly what's needed
+5. **Follow conventions** - Code style, naming, patterns from AGENTS.md
