@@ -4,6 +4,14 @@
 
 <Update [dependency name] from [current version] to [new version]. What will be updated when this task is complete?>
 
+## Pre-Flight Checklist
+
+Before starting, verify:
+- [ ] I have read AGENTS.md completely
+- [ ] I understand the existing patterns
+- [ ] I know the quality check commands
+- [ ] I understand the scope boundaries
+
 ## Task Type
 
 architecture
@@ -87,6 +95,35 @@ architecture
 1. <Step 1>
 2. <Step 2>
 3. <Step 3>
+
+## Execution Steps
+
+FOLLOW THESE STEPS IN ORDER:
+
+### Step 1: Research (do NOT write code yet)
+1. Read AGENTS.md completely
+2. Read all files in Scope/Allowed
+3. Identify existing patterns to follow
+4. List all files that will be created/modified
+
+### Step 2: Plan
+1. Document changes for each file
+2. Identify test cases needed
+3. Verify approach follows conventions
+
+### Step 3: Implement
+1. Update package files (package.json, lock files)
+2. Install new version
+3. Review breaking changes documentation
+4. Update code to address breaking changes
+5. Update tests for API changes
+6. Verify no deprecation warnings
+
+### Step 4: Verify
+1. Run: `[lint_command]`
+2. Run: `[typecheck_command]`
+3. Run: `[test_command]`
+4. ALL must pass before proceeding
 
 ## Definition of Done
 
