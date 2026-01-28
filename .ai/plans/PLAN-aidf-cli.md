@@ -15,49 +15,49 @@
 | 009-command-init | ✅ | 2026-01-27 |
 | 010-command-task | ✅ | 2026-01-27 |
 
-**Total tests:** 116 passing
+**Total tests:** 163 passing
 
 ---
 
 ## Fase 2: Polish & Release
 
-| Task | Auto-Mode | Dependencias | Prioridad |
-|------|-----------|--------------|-----------|
-| 011-ci-cd-github-actions | ✅ SÍ | ninguna | Alta |
-| 012-publish-npm | ⚠️ MANUAL | 011 | Alta |
-| 013-improve-readme | ✅ SÍ | ninguna | Alta |
-| 014-more-templates | ✅ SÍ | ninguna | Media |
+| Task | Auto-Mode | Dependencias | Prioridad | Status |
+|------|-----------|--------------|-----------|--------|
+| 011-ci-cd-github-actions | ✅ SÍ | ninguna | Alta | ✅ Done |
+| 012-publish-npm | ⚠️ MANUAL | 011 | Alta | ⏳ |
+| 013-improve-readme | ✅ SÍ | ninguna | Alta | ⏳ |
+| 014-more-templates | ✅ SÍ | ninguna | Media | ✅ Done |
 
 ---
 
 ## Fase 3: Features
 
-| Task | Auto-Mode | Dependencias | Prioridad |
-|------|-----------|--------------|-----------|
-| 015-command-status | ✅ SÍ | ninguna | Alta |
-| 016-command-watch | ⚠️ PARCIAL | ninguna | Media |
-| 017-resume-blocked | ✅ SÍ | ninguna | Alta |
-| 018-parallel-tasks | ⚠️ PARCIAL | ninguna | Media |
+| Task | Auto-Mode | Dependencias | Prioridad | Status |
+|------|-----------|--------------|-----------|--------|
+| 015-command-status | ✅ SÍ | ninguna | Alta | ✅ Done |
+| 016-command-watch | ⚠️ PARCIAL | ninguna | Media | ⏳ |
+| 017-resume-blocked | ✅ SÍ | ninguna | Alta | ✅ Done |
+| 018-parallel-tasks | ⚠️ PARCIAL | ninguna | Media | ⏳ |
 
 ---
 
 ## Fase 4: Integraciones
 
-| Task | Auto-Mode | Dependencias | Prioridad |
-|------|-----------|--------------|-----------|
-| 019-vscode-extension | ⚠️ PARCIAL | ninguna | Media |
-| 020-github-action | ✅ SÍ | 011 | Media |
-| 021-pre-commit-hooks | ✅ SÍ | ninguna | Baja |
+| Task | Auto-Mode | Dependencias | Prioridad | Status |
+|------|-----------|--------------|-----------|--------|
+| 019-vscode-extension | ⚠️ PARCIAL | ninguna | Media | ⏳ |
+| 020-github-action | ✅ SÍ | 011 | Media | ⏳ |
+| 021-pre-commit-hooks | ✅ SÍ | ninguna | Baja | ⏳ |
 
 ---
 
 ## Fase 5: UX Improvements
 
-| Task | Auto-Mode | Dependencias | Prioridad |
-|------|-----------|--------------|-----------|
-| 022-progress-bar | ✅ SÍ | ninguna | Media |
-| 023-structured-logs | ✅ SÍ | ninguna | Baja |
-| 024-notifications | ⚠️ PARCIAL | ninguna | Baja |
+| Task | Auto-Mode | Dependencias | Prioridad | Status |
+|------|-----------|--------------|-----------|--------|
+| 022-progress-bar | ✅ SÍ | ninguna | Media | ✅ Done |
+| 023-structured-logs | ✅ SÍ | ninguna | Baja | ✅ Done |
+| 024-notifications | ⚠️ PARCIAL | ninguna | Baja | ⏳ |
 
 ---
 
@@ -113,15 +113,15 @@ Fase 3 (Features) - Independientes
 ## Checklist de Progreso
 
 ### Fase 2: Polish & Release
-- [ ] 011-ci-cd-github-actions
+- [x] 011-ci-cd-github-actions (2026-01-28)
 - [ ] 012-publish-npm
 - [ ] 013-improve-readme
-- [ ] 014-more-templates
+- [x] 014-more-templates (2026-01-28)
 
 ### Fase 3: Features
-- [ ] 015-command-status
+- [x] 015-command-status (2026-01-28)
 - [ ] 016-command-watch
-- [ ] 017-resume-blocked
+- [x] 017-resume-blocked (2026-01-28)
 - [ ] 018-parallel-tasks
 
 ### Fase 4: Integraciones
@@ -130,6 +130,6 @@ Fase 3 (Features) - Independientes
 - [ ] 021-pre-commit-hooks
 
 ### Fase 5: UX
-- [ ] 022-progress-bar
-- [ ] 023-structured-logs
+- [x] 022-progress-bar (2026-01-28)
+- [x] 023-structured-logs (2026-01-28)
 - [ ] 024-notifications
