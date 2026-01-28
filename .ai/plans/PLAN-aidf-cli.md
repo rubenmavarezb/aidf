@@ -45,7 +45,7 @@
 
 | Task | Auto-Mode | Dependencias | Prioridad | Status |
 |------|-----------|--------------|-----------|--------|
-| 019-vscode-extension | ⚠️ PARCIAL | ninguna | Media | ⏳ |
+| 019-vscode-extension | ⚠️ PARCIAL | ninguna | Media | ⛔ Cancelled |
 | 020-github-action | ✅ SÍ | 011 | Media | ✅ Done |
 | 021-pre-commit-hooks | ✅ SÍ | ninguna | Baja | ✅ Done |
 
@@ -140,7 +140,7 @@ Fase 3 (Features) - Independientes
 - [ ] 018-parallel-tasks
 
 ### Fase 4: Integraciones
-- [ ] 019-vscode-extension
+- [x] ~~019-vscode-extension~~ (Cancelled)
 - [x] 020-github-action (2026-01-28)
 - [x] 021-pre-commit-hooks (2026-01-28)
 
