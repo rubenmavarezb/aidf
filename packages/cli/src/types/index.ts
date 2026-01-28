@@ -7,6 +7,7 @@ export interface AidfConfig {
   permissions: PermissionsConfig;
   validation: ValidationConfig;
   git: GitConfig;
+  notifications?: NotificationsConfig;
 }
 
 export interface ProviderConfig {
@@ -36,6 +37,55 @@ export interface ValidationConfig {
 export interface GitConfig {
   commit_prefix: string;
   branch_prefix: string;
+}
+
+// === Notification Types ===
+
+export type NotificationLevel = 'all' | 'errors' | 'blocked';
+
+export interface DesktopNotificationConfig {
+  enabled: boolean;
+}
+
+export interface SlackNotificationConfig {
+  enabled: boolean;
+  webhook_url: string;
+}
+
+export interface DiscordNotificationConfig {
+  enabled: boolean;
+  webhook_url: string;
+}
+
+export interface EmailNotificationConfig {
+  enabled: boolean;
+  smtp_host: string;
+  smtp_port: number;
+  smtp_user: string;
+  smtp_pass: string;
+  from: string;
+  to: string;
+}
+
+export interface NotificationsConfig {
+  level: NotificationLevel;
+  desktop?: DesktopNotificationConfig;
+  slack?: SlackNotificationConfig;
+  discord?: DiscordNotificationConfig;
+  email?: EmailNotificationConfig;
+}
+
+export type NotificationEventType = 'completed' | 'blocked' | 'failed';
+
+export interface NotificationEvent {
+  type: NotificationEventType;
+  taskPath: string;
+  taskName: string;
+  iterations: number;
+  filesModified: string[];
+  error?: string;
+  blockedReason?: string;
+  timestamp: Date;
 }
 
 // === Task Types ===
@@ -213,6 +263,87 @@ export interface StatusData {
     type: string;
     model?: string;
   };
+}
+
+// === Watcher Types ===
+
+export type WatcherEventType = 'task_added' | 'task_modified' | 'config_changed';
+
+export interface WatcherEvent {
+  type: WatcherEventType;
+  filePath: string;
+  timestamp: Date;
+}
+
+export interface WatcherOptions {
+  debounceMs: number;
+  daemon: boolean;
+  verbose: boolean;
+  quiet: boolean;
+  logFormat?: 'text' | 'json';
+  logFile?: string;
+  logRotate?: boolean;
+  dryRun: boolean;
+  provider?: string;
+  maxIterations?: number;
+}
+
+export type WatcherStatus = 'idle' | 'watching' | 'executing' | 'stopping' | 'stopped';
+
+export interface WatcherState {
+  status: WatcherStatus;
+  startedAt?: Date;
+  tasksExecuted: number;
+  tasksCompleted: number;
+  tasksFailed: number;
+  tasksBlocked: number;
+  currentTask: string | null;
+  queuedTasks: string[];
+  processedTasks: Map<string, number>;
+}
+
+// === Parallel Execution Types ===
+
+export interface TaskDependency {
+  taskPath: string;
+  dependsOn: string[];
+  reason: string;
+}
+
+export interface ParallelExecutorOptions {
+  concurrency: number;
+  dryRun: boolean;
+  verbose: boolean;
+  quiet: boolean;
+  maxIterations?: number;
+  resume?: boolean;
+  logFormat?: 'text' | 'json';
+  logFile?: string;
+  logRotate?: boolean;
+  onTaskStart?: (taskPath: string) => void;
+  onTaskComplete?: (taskPath: string, result: ExecutorResult) => void;
+}
+
+export interface ParallelTaskResult {
+  taskPath: string;
+  taskName: string;
+  result: ExecutorResult;
+  startedAt: Date;
+  completedAt: Date;
+}
+
+export interface ParallelExecutionResult {
+  success: boolean;
+  totalTasks: number;
+  completed: number;
+  failed: number;
+  blocked: number;
+  skipped: number;
+  tasks: ParallelTaskResult[];
+  dependencies: TaskDependency[];
+  fileConflicts: string[];
+  totalIterations: number;
+  totalFilesModified: string[];
 }
 
 // === Logging Types ===

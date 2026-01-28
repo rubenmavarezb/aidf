@@ -1,0 +1,86 @@
+name: AIDF Task Runner
+
+on:
+  workflow_dispatch:
+    inputs:
+      task:
+        description: 'Path to the AIDF task file'
+        required: true
+        type: string
+      provider:
+        description: 'AI provider'
+        required: false
+        default: 'anthropic-api'
+        type: choice
+        options:
+          - anthropic-api
+          - openai-api
+          - claude-cli
+      max-iterations:
+        description: 'Maximum iterations'
+        required: false
+        default: '50'
+        type: string
+      auto-pr:
+        description: 'Create PR with changes'
+        required: false
+        default: false
+        type: boolean
+
+  issues:
+    types: [labeled]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  # Manual trigger via workflow_dispatch
+  run-manual:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run AIDF task
+        uses: ./
+        with:
+          task: ${{ inputs.task }}
+          provider: ${{ inputs.provider }}
+          max-iterations: ${{ inputs.max-iterations }}
+          auto-pr: ${{ inputs.auto-pr }}
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
+  # Auto-trigger when an issue is labeled 'aidf'
+  run-from-issue:
+    if: github.event_name == 'issues' && github.event.label.name == 'aidf'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract task path from issue body
+        id: extract
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        shell: bash
+        run: |
+          # Expects a line like: task: .ai/tasks/example-task.md
+          TASK_PATH=$(echo "$ISSUE_BODY" | grep -iE '^task:\s*' | head -1 | sed 's/^[Tt]ask:\s*//' | xargs)
+          if [[ -z "$TASK_PATH" ]]; then
+            echo "::error::No 'task:' line found in issue body"
+            exit 1
+          fi
+          echo "task=$TASK_PATH" >> "$GITHUB_OUTPUT"
+
+      - name: Run AIDF task
+        uses: ./
+        with:
+          task: ${{ steps.extract.outputs.task }}
+          auto-pr: 'true'
+          comment-on-issue: ${{ github.event.issue.number }}
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}

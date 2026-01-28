@@ -27,4 +27,6 @@ Crear extensión de VS Code para integración nativa con AIDF.
 - [ ] Comandos en command palette
 - [ ] Publicar en VS Code Marketplace
 
-## Status: 🔵 Ready
+## Status: ⛔ Cancelled
+
+Deferred — no user demand yet. Can be revisited post-launch.

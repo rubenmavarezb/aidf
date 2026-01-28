@@ -14,6 +14,8 @@ export interface LoggerOptions {
   logFormat?: LogFormat;
   logFile?: string;
   logRotate?: boolean;
+  prefix?: string;
+  prefixColor?: string;
 }
 
 export class Logger {
@@ -24,6 +26,8 @@ export class Logger {
   private logFile: string | null;
   private logStream: WriteStream | null = null;
   private context: LogContext = {};
+  private prefix: string | null;
+  private prefixColor: string | null;
 
   constructor(options: boolean | LoggerOptions = false) {
     if (typeof options === 'boolean') {
@@ -32,12 +36,16 @@ export class Logger {
       this.quiet = false;
       this.logFormat = 'text';
       this.logFile = null;
+      this.prefix = null;
+      this.prefixColor = null;
     } else {
       this.verbose = options.verbose ?? false;
       this.quiet = options.quiet ?? false;
       this.logFormat = options.logFormat ?? 'text';
       this.logFile = options.logFile ?? null;
-      
+      this.prefix = options.prefix ?? null;
+      this.prefixColor = options.prefixColor ?? null;
+
       if (this.logFile) {
         this.initializeLogFile(this.logFile, options.logRotate ?? false);
       }
@@ -109,7 +117,7 @@ export class Logger {
       const entry: StructuredLogEntry = {
         timestamp: new Date().toISOString(),
         level,
-        message,
+        message: this.prefix ? `[${this.prefix}] ${message}` : message,
         context: Object.keys(this.context).length > 0 ? { ...this.context } : undefined,
       };
 
@@ -142,19 +150,23 @@ export class Logger {
    * Format log message for text output
    */
   private formatTextLog(level: 'debug' | 'info' | 'warn' | 'error' | 'success', message: string): string {
+    const prefixStr = this.prefix
+      ? (this.prefixColor ? (chalk as any)[this.prefixColor](`[${this.prefix}]`) : chalk.cyan(`[${this.prefix}]`)) + ' '
+      : '';
+
     switch (level) {
       case 'info':
-        return chalk.blue('i') + ' ' + message;
+        return prefixStr + chalk.blue('i') + ' ' + message;
       case 'success':
-        return chalk.green('✓') + ' ' + message;
+        return prefixStr + chalk.green('✓') + ' ' + message;
       case 'warn':
-        return chalk.yellow('!') + ' ' + message;
+        return prefixStr + chalk.yellow('!') + ' ' + message;
       case 'error':
-        return chalk.red('✗') + ' ' + message;
+        return prefixStr + chalk.red('✗') + ' ' + message;
       case 'debug':
-        return chalk.gray('  [debug]') + ' ' + message;
+        return prefixStr + chalk.gray('  [debug]') + ' ' + message;
       default:
-        return message;
+        return prefixStr + message;
     }
   }
 

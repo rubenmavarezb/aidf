@@ -128,3 +128,9 @@ IMPORTANT: You [key constraint]. You do NOT [anti-pattern].
 - Inspirado en estructura de Claude Code system prompt
 - Mantener especificidad por rol (no reglas genéricas)
 - Las reglas deben ser verificables, no subjetivas
+
+## Status: ✅ COMPLETED
+
+- **Completed:** 2026-01-28
+- **Agent:** Claude Code (session 013-improve-readme)
+- **PR:** #2

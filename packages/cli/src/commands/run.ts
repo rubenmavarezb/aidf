@@ -7,6 +7,7 @@ import { join } from 'path';
 import inquirer from 'inquirer';
 import chalk from 'chalk';
 import { executeTask } from '../core/executor.js';
+import { ParallelExecutor } from '../core/parallel-executor.js';
 import { ContextLoader } from '../core/context-loader.js';
 import { Logger } from '../utils/logger.js';
 import { ProgressBar } from '../utils/progress-bar.js';
@@ -15,7 +16,7 @@ import type { ExecutorResult, ExecutorState } from '../types/index.js';
 export function createRunCommand(): Command {
   const cmd = new Command('run')
     .description('Execute a task autonomously')
-    .argument('[task]', 'Path to task file (or auto-select first pending)')
+    .argument('[tasks...]', 'Path(s) to task file(s) (or auto-select first pending)')
     .option('-p, --provider <type>', 'Provider to use (claude-cli, anthropic-api, openai-api)')
     .option('-m, --max-iterations <n>', 'Maximum iterations', parseInt)
     .option('-d, --dry-run', 'Simulate without executing')
@@ -23,10 +24,12 @@ export function createRunCommand(): Command {
     .option('-q, --quiet', 'Suppress all output')
     .option('--auto-pr', 'Create PR when complete')
     .option('--resume', 'Resume a blocked task')
+    .option('--parallel', 'Execute multiple tasks in parallel')
+    .option('--concurrency <n>', 'Maximum concurrent tasks (default: 2)', parseInt)
     .option('--log-format <format>', 'Log format (text|json)', 'text')
     .option('--log-file <path>', 'Write logs to file')
     .option('--log-rotate', 'Enable log rotation (append timestamp to filename)')
-    .action(async (taskArg, options) => {
+    .action(async (tasksArg: string[], options) => {
       const logger = new Logger({
         verbose: options.verbose,
         quiet: options.quiet,
@@ -42,6 +45,15 @@ export function createRunCommand(): Command {
           logger.error('No AIDF project found. Run `aidf init` first.');
           process.exit(1);
         }
+
+        // Handle parallel execution
+        if (options.parallel) {
+          await runParallel(tasksArg, projectRoot, logger, options);
+          return;
+        }
+
+        // Single task execution (backwards compatible)
+        const taskArg = tasksArg.length > 0 ? tasksArg[0] : undefined;
 
         // Resolver path del task
         const taskPath = await resolveTaskPath(taskArg, projectRoot, logger, options.resume);
@@ -176,6 +188,85 @@ export function createRunCommand(): Command {
     });
 
   return cmd;
+}
+
+async function runParallel(
+  tasksArg: string[],
+  projectRoot: string,
+  logger: Logger,
+  options: {
+    dryRun?: boolean;
+    verbose?: boolean;
+    quiet?: boolean;
+    maxIterations?: number;
+    resume?: boolean;
+    concurrency?: number;
+    logFormat?: string;
+    logFile?: string;
+    logRotate?: boolean;
+  }
+): Promise<void> {
+  // Resolve all task paths
+  const taskPaths: string[] = [];
+
+  if (tasksArg.length === 0) {
+    logger.error('--parallel requires at least 2 task files. Usage: aidf run --parallel task1.md task2.md');
+    process.exit(1);
+  }
+
+  if (tasksArg.length < 2) {
+    logger.error('--parallel requires at least 2 task files. Use `aidf run` for single task execution.');
+    process.exit(1);
+  }
+
+  for (const taskArg of tasksArg) {
+    const fullPath = taskArg.startsWith('/')
+      ? taskArg
+      : join(process.cwd(), taskArg);
+
+    if (!existsSync(fullPath)) {
+      logger.error(`Task file not found: ${fullPath}`);
+      process.exit(1);
+    }
+    taskPaths.push(fullPath);
+  }
+
+  // Confirm execution
+  if (!options.dryRun) {
+    logger.info(`Parallel execution of ${taskPaths.length} tasks:`);
+    for (const tp of taskPaths) {
+      logger.info(`  - ${tp}`);
+    }
+
+    const { confirm } = await inquirer.prompt([{
+      type: 'confirm',
+      name: 'confirm',
+      message: `Start parallel execution of ${taskPaths.length} tasks?`,
+      default: true,
+    }]);
+
+    if (!confirm) {
+      logger.warn('Aborted.');
+      return;
+    }
+  }
+
+  const executor = new ParallelExecutor({
+    concurrency: options.concurrency || 2,
+    dryRun: options.dryRun ?? false,
+    verbose: options.verbose ?? false,
+    quiet: options.quiet ?? false,
+    maxIterations: options.maxIterations,
+    resume: options.resume,
+    logFormat: options.logFormat as 'text' | 'json' | undefined,
+    logFile: options.logFile,
+    logRotate: options.logRotate,
+  });
+
+  const result = await executor.run(taskPaths);
+
+  await logger.close();
+  process.exit(result.success ? 0 : 1);
 }
 
 async function resolveTaskPath(

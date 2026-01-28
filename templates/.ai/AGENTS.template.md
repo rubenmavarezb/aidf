@@ -181,6 +181,45 @@ export function Component({ title, count }: { title: string; count?: number }) {
 
 Why: Separate type definitions improve reusability and maintainability.
 
+#### Error Handling
+
+```typescript
+// ✅ CORRECT - Typed errors with context
+class NotFoundError extends AppError {
+  constructor(resource: string, id: string) {
+    super(`${resource} with id ${id} not found`, 404);
+  }
+}
+
+// ❌ WRONG - Generic throws with string messages
+throw new Error('not found');
+```
+
+Why: Typed errors enable consistent handling, better debugging, and proper HTTP status codes.
+
+#### Async Patterns
+
+```typescript
+// ✅ CORRECT - Async/await with explicit return type
+async function fetchUser(id: string): Promise<User> {
+  try {
+    const user = await userRepository.findById(id);
+    if (!user) throw new NotFoundError('User', id);
+    return user;
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    throw new InternalError('Failed to fetch user', { cause: error });
+  }
+}
+
+// ❌ WRONG - No return type, raw .then(), no error handling
+function fetchUser(id) {
+  return userRepository.findById(id).then(user => user);
+}
+```
+
+Why: Explicit return types and structured error handling prevent silent failures and unhandled rejections.
+
 ### Component/Module Structure
 
 ```
@@ -303,6 +342,39 @@ CRITICAL: These MUST pass before marking any task complete.
 |---------|-------------|-------------|
 | `[command]` | [Description] | [When] |
 | `[command]` | [Description] | [When] |
+
+### Common Issues
+
+| Issue | Cause | Fix |
+|-------|-------|-----|
+| `[error message or symptom]` | [Why it happens] | `[command or action to fix]` |
+| `[error message or symptom]` | [Why it happens] | `[command or action to fix]` |
+| `[error message or symptom]` | [Why it happens] | `[command or action to fix]` |
+
+### Command Sequences
+
+**[Workflow Name: e.g., "Start New Feature"]**
+
+```bash
+[command 1]   # [Step description]
+[command 2]   # [Step description]
+[command 3]   # [Step description]
+```
+
+**[Workflow Name: e.g., "Pre-Commit Verification"]**
+
+```bash
+[command 1]   # [Step description]
+[command 2]   # [Step description]
+[command 3]   # [Step description]
+```
+
+**[Workflow Name: e.g., "Reset Development Environment"]**
+
+```bash
+[command 1]   # [Step description]
+[command 2]   # [Step description]
+```
 
 ---
 
