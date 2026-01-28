@@ -9,6 +9,7 @@ import chalk from 'chalk';
 import { Executor, executeTask } from '../core/executor.js';
 import { ContextLoader } from '../core/context-loader.js';
 import { Logger } from '../utils/logger.js';
+import { ProgressBar } from '../utils/progress-bar.js';
 import type { ExecutorResult, ExecutorState } from '../types/index.js';
 
 export function createRunCommand(): Command {
@@ -19,10 +20,20 @@ export function createRunCommand(): Command {
     .option('-m, --max-iterations <n>', 'Maximum iterations', parseInt)
     .option('-d, --dry-run', 'Simulate without executing')
     .option('-v, --verbose', 'Verbose output')
+    .option('-q, --quiet', 'Suppress all output')
     .option('--auto-pr', 'Create PR when complete')
     .option('--resume', 'Resume a blocked task')
+    .option('--log-format <format>', 'Log format (text|json)', 'text')
+    .option('--log-file <path>', 'Write logs to file')
+    .option('--log-rotate', 'Enable log rotation (append timestamp to filename)')
     .action(async (taskArg, options) => {
-      const logger = new Logger(options.verbose);
+      const logger = new Logger({
+        verbose: options.verbose,
+        quiet: options.quiet,
+        logFormat: options.logFormat as 'text' | 'json' | undefined,
+        logFile: options.logFile,
+        logRotate: options.logRotate,
+      });
 
       try {
         // Encontrar proyecto AIDF
@@ -33,9 +44,13 @@ export function createRunCommand(): Command {
         }
 
         // Resolver path del task
-        const taskPath = await resolveTaskPath(taskArg, projectRoot, logger);
+        const taskPath = await resolveTaskPath(taskArg, projectRoot, logger, options.resume);
         if (!taskPath) {
-          logger.error('No task specified and no pending tasks found.');
+          if (options.resume) {
+            logger.error('No blocked task found to resume.');
+          } else {
+            logger.error('No task specified and no pending tasks found.');
+          }
           process.exit(1);
         }
 
@@ -44,13 +59,35 @@ export function createRunCommand(): Command {
         // Cargar contexto para preview
         const context = await new ContextLoader(projectRoot).loadContext(taskPath);
 
+        // Validar resume si está habilitado
+        if (options.resume) {
+          if (!context.task.blockedStatus) {
+            logger.error('Task is not blocked. Cannot use --resume on a task that is not in BLOCKED status.');
+            process.exit(1);
+          }
+        }
+
         // Mostrar preview
-        logger.box('Task Preview', [
+        const previewLines = [
           `Goal: ${context.task.goal}`,
           `Type: ${context.task.taskType}`,
           `Role: ${context.role.name}`,
           `Scope: ${context.task.scope.allowed.slice(0, 3).join(', ')}${context.task.scope.allowed.length > 3 ? '...' : ''}`,
-        ].join('\n'));
+        ];
+
+        // Agregar información de resume si está habilitado
+        if (options.resume && context.task.blockedStatus) {
+          const blocked = context.task.blockedStatus;
+          previewLines.push(
+            '',
+            '--- Resume Context ---',
+            `Previous Iteration: ${blocked.previousIteration}`,
+            `Blocking Issue: ${blocked.blockingIssue.slice(0, 100)}${blocked.blockingIssue.length > 100 ? '...' : ''}`,
+            `Files Modified: ${blocked.filesModified.length}`,
+          );
+        }
+
+        logger.box(options.resume ? 'Resuming Blocked Task' : 'Task Preview', previewLines.join('\n'));
 
         // Confirmar ejecución
         if (!options.dryRun) {
@@ -68,19 +105,33 @@ export function createRunCommand(): Command {
         }
 
         // Ejecutar
-        logger.startSpinner('Executing task...');
+        logger.setContext({ task: taskPath, command: 'run' });
+        const maxIterations = options.maxIterations || 50;
+        let progressBar = new ProgressBar(maxIterations, options.quiet);
+        let currentIteration = 0;
+        let currentFilesModified = 0;
 
         const result = await executeTask(taskPath, {
           dryRun: options.dryRun,
           verbose: options.verbose,
           maxIterations: options.maxIterations,
+          resume: options.resume,
           onIteration: (state: ExecutorState) => {
-            logger.updateSpinner(
-              `Iteration ${state.iteration} - ${state.filesModified.length} files modified`
+            currentIteration = state.iteration;
+            currentFilesModified = state.filesModified.length;
+            logger.setContext({
+              task: taskPath,
+              iteration: state.iteration,
+              files: state.filesModified,
+            });
+            progressBar.update(
+              state.iteration,
+              state.filesModified.length,
+              state.iteration
             );
           },
           onAskUser: async (question: string, files: string[]): Promise<boolean> => {
-            logger.stopSpinner(true);
+            progressBar.complete();
             console.log('\n');
             logger.warn(question);
             console.log(chalk.gray('Files:'), files.join(', '));
@@ -92,13 +143,17 @@ export function createRunCommand(): Command {
               default: false,
             }]);
 
-            logger.startSpinner('Continuing...');
+            // Restart progress bar if continuing
+            if (approved) {
+              progressBar = new ProgressBar(maxIterations, options.quiet);
+              progressBar.update(currentIteration, currentFilesModified, currentIteration);
+            }
             return approved;
           },
         });
 
         // Mostrar resultado
-        logger.stopSpinner(result.success, result.success ? 'Task complete!' : 'Task stopped');
+        progressBar.complete();
 
         printResult(result, logger);
 
@@ -107,11 +162,15 @@ export function createRunCommand(): Command {
           await createPullRequest(context.task.goal, result, logger);
         }
 
+        // Close log file if open
+        await logger.close();
+
         process.exit(result.success ? 0 : 1);
 
       } catch (error) {
         logger.stopSpinner(false);
         logger.error(error instanceof Error ? error.message : 'Unknown error');
+        await logger.close();
         process.exit(1);
       }
     });
@@ -122,7 +181,8 @@ export function createRunCommand(): Command {
 async function resolveTaskPath(
   taskArg: string | undefined,
   projectRoot: string,
-  logger: Logger
+  logger: Logger,
+  resume: boolean = false
 ): Promise<string | null> {
   // Si se especificó, usarlo directamente
   if (taskArg) {
@@ -134,6 +194,16 @@ async function resolveTaskPath(
       logger.error(`Task file not found: ${fullPath}`);
       return null;
     }
+    
+    // Si es resume, validar que esté bloqueado
+    if (resume) {
+      const content = await readFile(fullPath, 'utf-8');
+      if (!content.includes('## Status:') || !content.includes('BLOCKED')) {
+        logger.error(`Task is not blocked. Cannot use --resume on this task.`);
+        return null;
+      }
+    }
+    
     return fullPath;
   }
 
@@ -150,6 +220,37 @@ async function resolveTaskPath(
 
   if (taskFiles.length === 0) {
     return null;
+  }
+
+  // Si es resume, filtrar solo tasks bloqueadas
+  if (resume) {
+    const blockedTasks: string[] = [];
+    for (const file of taskFiles) {
+      const content = await readFile(join(tasksDir, file), 'utf-8');
+      if (content.includes('## Status:') && content.includes('BLOCKED')) {
+        blockedTasks.push(file);
+      }
+    }
+
+    if (blockedTasks.length === 0) {
+      logger.error('No blocked tasks found.');
+      return null;
+    }
+
+    if (blockedTasks.length === 1) {
+      return join(tasksDir, blockedTasks[0]);
+    }
+
+    // Mostrar selector de tasks bloqueadas
+    logger.warn('Multiple blocked tasks found. Select one to resume:');
+    const { selected } = await inquirer.prompt([{
+      type: 'list',
+      name: 'selected',
+      message: 'Select blocked task to resume:',
+      choices: blockedTasks,
+    }]);
+
+    return join(tasksDir, selected);
   }
 
   // Buscar primera sin status BLOCKED o COMPLETED

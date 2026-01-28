@@ -173,10 +173,35 @@ export function buildIterationPrompt(context: {
   plan?: string;
   previousOutput?: string;
   iteration: number;
+  blockingContext?: {
+    previousIteration: number;
+    blockingIssue: string;
+    filesModified: string[];
+  };
 }): string {
   let prompt = '';
 
   prompt += `# AIDF Autonomous Execution - Iteration ${context.iteration}\n\n`;
+  
+  if (context.blockingContext) {
+    prompt += `## Resuming Blocked Task\n\n`;
+    prompt += `This task was previously blocked at iteration ${context.blockingContext.previousIteration}.\n\n`;
+    prompt += `### Previous Blocking Issue\n\n`;
+    prompt += context.blockingContext.blockingIssue;
+    prompt += '\n\n';
+    prompt += `### Files Modified in Previous Attempt\n\n`;
+    if (context.blockingContext.filesModified.length > 0) {
+      context.blockingContext.filesModified.forEach(file => {
+        prompt += `- \`${file}\`\n`;
+      });
+    } else {
+      prompt += '_None_\n';
+    }
+    prompt += '\n';
+    prompt += `**IMPORTANT**: Review the blocking issue above. The problem has been addressed or guidance provided. Continue from where it left off.\n\n`;
+    prompt += `---\n\n`;
+  }
+
   prompt += `You are executing a task autonomously. Follow the context below.\n\n`;
 
   prompt += `## Project Context (AGENTS.md)\n\n`;

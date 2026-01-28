@@ -7,12 +7,14 @@ import type {
   ExecutorResult,
   AidfConfig,
   LoadedContext,
+  BlockedStatus,
 } from '../types/index.js';
 import { loadContext } from './context-loader.js';
 import { createProvider, type Provider } from './providers/index.js';
 import { buildIterationPrompt } from './providers/claude-cli.js';
 import { ScopeGuard } from './safety.js';
 import { Validator } from './validator.js';
+import { Logger } from '../utils/logger.js';
 
 export class Executor {
   private options: ExecutorOptions;
@@ -21,6 +23,7 @@ export class Executor {
   private provider: Provider;
   private git: SimpleGit;
   private state: ExecutorState;
+  private logger: Logger;
 
   constructor(
     config: AidfConfig,
@@ -60,6 +63,9 @@ export class Executor {
       filesModified: [],
       validationResults: [],
     };
+
+    // Initialize logger (use provided logger or create default)
+    this.logger = options.logger ?? new Logger({ verbose: this.options.verbose });
   }
 
   /**
@@ -70,12 +76,38 @@ export class Executor {
     this.state.startedAt = new Date();
     this.state.iteration = 0;
 
+    // Set initial context
+    this.logger.setContext({ task: taskPath, iteration: 0 });
+
     let consecutiveFailures = 0;
     let context: LoadedContext;
+    let blockedStatus = null;
 
     try {
       // Cargar contexto
       context = await loadContext(taskPath);
+      
+      // Si estamos resumiendo, cargar estado bloqueado
+      if (this.options.resume) {
+        if (!context.task.blockedStatus) {
+          throw new Error('Task is not blocked. Cannot resume a task that is not in BLOCKED status.');
+        }
+        blockedStatus = context.task.blockedStatus;
+        this.state.iteration = blockedStatus.previousIteration;
+        this.state.filesModified = [...blockedStatus.filesModified];
+        this.logger.setContext({
+          task: taskPath,
+          iteration: blockedStatus.previousIteration,
+          files: blockedStatus.filesModified,
+        });
+        this.log(`Resuming blocked task from iteration ${blockedStatus.previousIteration}`);
+        this.log(`Previous blocking issue: ${blockedStatus.blockingIssue.slice(0, 100)}...`);
+        
+        // Registrar intento de resume
+        await this.recordResumeAttempt(taskPath, blockedStatus);
+      }
+
+      this.logger.setContext({ task: taskPath, iteration: 0 });
       this.log(`Loaded context for task: ${context.task.goal}`);
       this.log(`Role: ${context.role.name}`);
       this.log(`Scope: ${context.task.scope.allowed.join(', ')}`);
@@ -96,15 +128,25 @@ export class Executor {
         this.state.status === 'running'
       ) {
         this.state.iteration++;
+        this.logger.setContext({
+          task: taskPath,
+          iteration: this.state.iteration,
+          files: this.state.filesModified,
+        });
         this.log(`\n=== Iteration ${this.state.iteration} ===`);
 
-        // Construir prompt
+        // Construir prompt con contexto de bloqueo si existe
         const prompt = buildIterationPrompt({
           agents: context.agents.raw,
           role: context.role.raw,
           task: context.task.raw,
           plan: context.plan,
           iteration: this.state.iteration,
+          blockingContext: blockedStatus ? {
+            previousIteration: blockedStatus.previousIteration,
+            blockingIssue: blockedStatus.blockingIssue,
+            filesModified: blockedStatus.filesModified,
+          } : undefined,
         });
 
         // Ejecutar provider
@@ -174,8 +216,20 @@ export class Executor {
 
         // Verificar completado
         if (result.iterationComplete) {
+          this.logger.setContext({
+            task: taskPath,
+            iteration: this.state.iteration,
+            files: this.state.filesModified,
+            status: 'completed',
+          });
           this.log(`Task complete: ${result.completionSignal}`);
           this.state.status = 'completed';
+          
+          // Limpiar estado BLOCKED si estaba resumiendo
+          if (this.options.resume && blockedStatus) {
+            await this.clearBlockedStatus(taskPath, blockedStatus);
+          }
+          
           break;
         }
 
@@ -201,6 +255,11 @@ export class Executor {
       ) {
         this.state.status = 'blocked';
         this.state.lastError = `Max iterations (${this.options.maxIterations}) reached`;
+        
+        // Si estaba resumiendo, actualizar historial
+        if (this.options.resume && blockedStatus) {
+          await this.updateResumeAttemptHistory(taskPath, blockedStatus, 'blocked_again');
+        }
       }
 
       // Verificar si terminamos por failures consecutivos
@@ -210,6 +269,11 @@ export class Executor {
       ) {
         this.state.status = 'blocked';
         this.state.lastError = `Max consecutive failures (${this.options.maxConsecutiveFailures}) reached`;
+        
+        // Si estaba resumiendo, actualizar historial
+        if (this.options.resume && blockedStatus) {
+          await this.updateResumeAttemptHistory(taskPath, blockedStatus, 'blocked_again');
+        }
       }
 
     } catch (error) {
@@ -265,7 +329,9 @@ export class Executor {
 
   private log(message: string): void {
     if (this.options.verbose) {
-      console.log(`[aidf] ${message}`);
+      this.logger.debug(`[aidf] ${message}`);
+    } else {
+      this.logger.info(message);
     }
   }
 
@@ -322,6 +388,117 @@ ${this.state.filesModified.map(f => `- \`${f}\``).join('\n') || '_None_'}
 
     await fs.writeFile(taskPath, updatedContent);
     this.log(`Updated task file with BLOCKED status`);
+  }
+
+  /**
+   * Registra un intento de resume en el task file
+   */
+  private async recordResumeAttempt(
+    taskPath: string,
+    blockedStatus: BlockedStatus
+  ): Promise<void> {
+    const fs = await import('fs/promises');
+    const existingContent = await fs.readFile(taskPath, 'utf-8');
+
+    const resumeAttempt = `- **Resumed at:** ${new Date().toISOString()}
+- **Previous attempt:** Iteration ${blockedStatus.previousIteration}, blocked at ${blockedStatus.blockedAt}`;
+
+    // Buscar sección de Resume Attempt History o crearla
+    if (existingContent.includes('### Resume Attempt History')) {
+      // Agregar al historial existente
+      const updatedContent = existingContent.replace(
+        /(### Resume Attempt History\n)/,
+        `$1${resumeAttempt}\n\n`
+      );
+      await fs.writeFile(taskPath, updatedContent);
+    } else {
+      // Crear nueva sección antes del cierre de Status
+      const historySection = `\n### Resume Attempt History\n${resumeAttempt}\n`;
+      const updatedContent = existingContent.replace(
+        /(---\n@developer:)/,
+        `${historySection}$1`
+      );
+      await fs.writeFile(taskPath, updatedContent);
+    }
+
+    this.log(`Recorded resume attempt in task file`);
+  }
+
+  /**
+   * Actualiza el historial de intentos de resume
+   */
+  private async updateResumeAttemptHistory(
+    taskPath: string,
+    blockedStatus: BlockedStatus,
+    status: 'completed' | 'blocked_again'
+  ): Promise<void> {
+    const fs = await import('fs/promises');
+    const existingContent = await fs.readFile(taskPath, 'utf-8');
+
+    if (!existingContent.includes('### Resume Attempt History')) {
+      return; // No hay historial para actualizar
+    }
+
+    // Actualizar el último intento con el estado final
+    const completedAt = new Date().toISOString();
+    const iterations = this.state.iteration - blockedStatus.previousIteration;
+    
+    const updatePattern = new RegExp(
+      `(### Resume Attempt History\\n[\\s\\S]*?Resumed at:.*?\\n.*?Previous attempt:.*?\\n)`,
+      'i'
+    );
+    
+    const replacement = `$1- **Completed at:** ${completedAt}
+- **Status:** ${status}
+- **Iterations in this attempt:** ${iterations}
+`;
+
+    const updatedContent = existingContent.replace(updatePattern, replacement);
+    await fs.writeFile(taskPath, updatedContent);
+    
+    this.log(`Updated resume attempt history with status: ${status}`);
+  }
+
+  /**
+   * Limpia el estado BLOCKED del task file cuando la tarea se completa
+   */
+  private async clearBlockedStatus(
+    taskPath: string,
+    blockedStatus: BlockedStatus
+  ): Promise<void> {
+    const fs = await import('fs/promises');
+    const existingContent = await fs.readFile(taskPath, 'utf-8');
+
+    // Crear sección de historial de ejecución preservando información importante
+    const executionHistory = `
+
+## Execution History
+
+### Original Block
+- **Started:** ${blockedStatus.startedAt}
+- **Blocked at:** ${blockedStatus.blockedAt}
+- **Iterations before block:** ${blockedStatus.previousIteration}
+- **Blocking issue:** ${blockedStatus.blockingIssue.slice(0, 200)}${blockedStatus.blockingIssue.length > 200 ? '...' : ''}
+
+### Resume and Completion
+- **Resumed at:** ${blockedStatus.attemptHistory?.[0]?.resumedAt || 'N/A'}
+- **Completed at:** ${new Date().toISOString()}
+- **Total iterations:** ${this.state.iteration}
+- **Files modified:** ${this.state.filesModified.length} files
+
+---
+
+## Status: ✅ COMPLETED
+`;
+
+    // Reemplazar sección BLOCKED con historial y status COMPLETED
+    const updatedContent = existingContent.replace(
+      /## Status:[\s\S]*?(?=\n## |$)/,
+      executionHistory.trim()
+    );
+
+    await fs.writeFile(taskPath, updatedContent);
+    this.log(`Cleared BLOCKED status and marked task as COMPLETED`);
   }
 }
 

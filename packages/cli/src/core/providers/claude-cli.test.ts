@@ -177,6 +177,58 @@ describe('buildIterationPrompt', () => {
     expect(prompt).toContain('forbidden scope');
   });
 
+  it('should include blocking context when resuming', () => {
+    const prompt = buildIterationPrompt({
+      agents: 'agents',
+      role: 'role',
+      task: 'task',
+      iteration: 6,
+      blockingContext: {
+        previousIteration: 5,
+        blockingIssue: 'Missing API key configuration',
+        filesModified: ['src/api/client.ts', 'src/config/settings.ts'],
+      },
+    });
+
+    expect(prompt).toContain('Resuming Blocked Task');
+    expect(prompt).toContain('previously blocked at iteration 5');
+    expect(prompt).toContain('Previous Blocking Issue');
+    expect(prompt).toContain('Missing API key configuration');
+    expect(prompt).toContain('Files Modified in Previous Attempt');
+    expect(prompt).toContain('src/api/client.ts');
+    expect(prompt).toContain('src/config/settings.ts');
+    expect(prompt).toContain('Continue from where it left off');
+  });
+
+  it('should not include blocking context section when not resuming', () => {
+    const prompt = buildIterationPrompt({
+      agents: 'agents',
+      role: 'role',
+      task: 'task',
+      iteration: 1,
+    });
+
+    expect(prompt).not.toContain('Resuming Blocked Task');
+    expect(prompt).not.toContain('Previous Blocking Issue');
+  });
+
+  it('should handle blocking context with no files modified', () => {
+    const prompt = buildIterationPrompt({
+      agents: 'agents',
+      role: 'role',
+      task: 'task',
+      iteration: 2,
+      blockingContext: {
+        previousIteration: 1,
+        blockingIssue: 'Initial blocker',
+        filesModified: [],
+      },
+    });
+
+    expect(prompt).toContain('Resuming Blocked Task');
+    expect(prompt).toContain('_None_');
+  });
+
   it('should include Definition of Done reference', () => {
     const prompt = buildIterationPrompt({
       agents: 'agents',

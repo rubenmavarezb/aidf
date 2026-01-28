@@ -8,6 +8,7 @@ import inquirer from 'inquirer';
 import chalk from 'chalk';
 import { Logger } from '../utils/logger.js';
 import { ContextLoader } from '../core/context-loader.js';
+import { findTemplatesDir } from '../utils/files.js';
 import type { ParsedTask } from '../types/index.js';
 
 export function createTaskCommand(): Command {
@@ -19,8 +20,15 @@ export function createTaskCommand(): Command {
     .command('create')
     .description('Create a new task interactively')
     .option('-t, --template <name>', 'Use specific template')
+    .option('--log-format <format>', 'Log format (text|json)', 'text')
+    .option('--log-file <path>', 'Write logs to file')
+    .option('--log-rotate', 'Enable log rotation (append timestamp to filename)')
     .action(async (options) => {
-      const logger = new Logger();
+      const logger = new Logger({
+        logFormat: options.logFormat as 'text' | 'json' | undefined,
+        logFile: options.logFile,
+        logRotate: options.logRotate,
+      });
 
       try {
         const projectRoot = ContextLoader.findAiDir();
@@ -29,14 +37,16 @@ export function createTaskCommand(): Command {
           process.exit(1);
         }
 
-        const answers = await promptForTask(projectRoot);
+        const answers = await promptForTask(projectRoot, options.template);
         const taskPath = await createTaskFile(projectRoot, answers, logger);
 
         logger.success(`Created: ${taskPath}`);
         logger.info(`Run: aidf run ${taskPath}`);
+        await logger.close();
 
       } catch (error) {
         logger.error(error instanceof Error ? error.message : 'Unknown error');
+        await logger.close();
         process.exit(1);
       }
     });
@@ -47,8 +57,15 @@ export function createTaskCommand(): Command {
     .alias('ls')
     .description('List all tasks')
     .option('-a, --all', 'Include completed tasks')
+    .option('--log-format <format>', 'Log format (text|json)', 'text')
+    .option('--log-file <path>', 'Write logs to file')
+    .option('--log-rotate', 'Enable log rotation (append timestamp to filename)')
     .action(async (options) => {
-      const logger = new Logger();
+      const logger = new Logger({
+        logFormat: options.logFormat as 'text' | 'json' | undefined,
+        logFile: options.logFile,
+        logRotate: options.logRotate,
+      });
 
       try {
         const projectRoot = ContextLoader.findAiDir();
@@ -57,11 +74,14 @@ export function createTaskCommand(): Command {
           process.exit(1);
         }
 
+        logger.setContext({ command: 'task list' });
         const tasks = await listTasks(projectRoot, options.all);
         printTaskList(tasks, logger);
+        await logger.close();
 
       } catch (error) {
         logger.error(error instanceof Error ? error.message : 'Unknown error');
+        await logger.close();
         process.exit(1);
       }
     });
@@ -70,8 +90,15 @@ export function createTaskCommand(): Command {
   cmd
     .command('status [task]')
     .description('Show task status')
-    .action(async (taskArg) => {
-      const logger = new Logger();
+    .option('--log-format <format>', 'Log format (text|json)', 'text')
+    .option('--log-file <path>', 'Write logs to file')
+    .option('--log-rotate', 'Enable log rotation (append timestamp to filename)')
+    .action(async (taskArg, options) => {
+      const logger = new Logger({
+        logFormat: options.logFormat as 'text' | 'json' | undefined,
+        logFile: options.logFile,
+        logRotate: options.logRotate,
+      });
 
       try {
         const projectRoot = ContextLoader.findAiDir();
@@ -82,6 +109,7 @@ export function createTaskCommand(): Command {
 
         const loader = new ContextLoader(projectRoot);
 
+        logger.setContext({ command: 'task status', task: taskArg });
         if (taskArg) {
           const task = await loader.parseTask(taskArg);
           printTaskDetails(task, logger);
@@ -89,9 +117,11 @@ export function createTaskCommand(): Command {
           const tasks = await listTasks(projectRoot, true);
           printTaskSummary(tasks, logger);
         }
+        await logger.close();
 
       } catch (error) {
         logger.error(error instanceof Error ? error.message : 'Unknown error');
+        await logger.close();
         process.exit(1);
       }
     });
@@ -100,6 +130,7 @@ export function createTaskCommand(): Command {
 }
 
 interface TaskAnswers {
+  template?: string;
   goal: string;
   taskType: string;
   suggestedRoles: string[];
@@ -109,7 +140,193 @@ interface TaskAnswers {
   definitionOfDone: string[];
 }
 
-async function promptForTask(projectRoot: string): Promise<TaskAnswers> {
+interface TaskTemplate {
+  name: string;
+  path: string;
+  content: string;
+}
+
+interface ParsedTemplate {
+  goal?: string;
+  taskType?: string;
+  suggestedRoles?: string[];
+  allowedPaths?: string;
+  forbiddenPaths?: string;
+  requirements?: string;
+  definitionOfDone?: string[];
+}
+
+/**
+ * Find available task templates
+ */
+async function findTaskTemplates(projectRoot: string): Promise<TaskTemplate[]> {
+  const templates: TaskTemplate[] = [];
+
+  // Check project's .ai/templates/tasks/ first (user overrides)
+  const projectTemplatesDir = join(projectRoot, '.ai', 'templates', 'tasks');
+  if (existsSync(projectTemplatesDir)) {
+    try {
+      const files = await readdir(projectTemplatesDir);
+      for (const file of files.filter(f => f.endsWith('.template.md'))) {
+        const path = join(projectTemplatesDir, file);
+        const content = await readFile(path, 'utf-8');
+        const name = file.replace('.template.md', '').replace(/-/g, ' ');
+        templates.push({ name, path, content });
+      }
+    } catch {
+      // Ignore errors
+    }
+  }
+
+  // Check package templates directory
+  try {
+    const templatesDir = findTemplatesDir();
+    const tasksTemplatesDir = join(templatesDir, 'templates', 'tasks');
+    if (existsSync(tasksTemplatesDir)) {
+      const files = await readdir(tasksTemplatesDir);
+      for (const file of files.filter(f => f.endsWith('.template.md'))) {
+        // Skip if already found in project templates (check by filename)
+        const templateName = file.replace('.template.md', '');
+        if (templates.some(t => basename(t.path).replace('.template.md', '') === templateName)) {
+          continue;
+        }
+
+        const path = join(tasksTemplatesDir, file);
+        const content = await readFile(path, 'utf-8');
+        const name = file.replace('.template.md', '').replace(/-/g, ' ');
+        templates.push({ name, path, content });
+      }
+    }
+  } catch {
+    // Ignore errors if templates dir not found
+  }
+
+  return templates;
+}
+
+/**
+ * Parse template content to extract default values
+ */
+function parseTemplate(templateContent: string): ParsedTemplate {
+  const parsed: ParsedTemplate = {};
+
+  // Extract Goal
+  const goalMatch = templateContent.match(/## Goal\n\n(.+?)(?=\n##)/s);
+  if (goalMatch) {
+    const goal = goalMatch[1].trim();
+    if (!goal.startsWith('<')) {
+      parsed.goal = goal;
+    }
+  }
+
+  // Extract Task Type
+  const taskTypeMatch = templateContent.match(/## Task Type\n\n(.+?)(?=\n##)/s);
+  if (taskTypeMatch) {
+    const taskType = taskTypeMatch[1].trim();
+    if (!taskType.startsWith('<') && taskType.length > 0) {
+      parsed.taskType = taskType;
+    }
+  }
+
+  // Extract Suggested Roles
+  const rolesMatch = templateContent.match(/## Suggested Roles\n\n((?:- .+\n?)+)/);
+  if (rolesMatch) {
+    const roles = rolesMatch[1]
+      .split('\n')
+      .filter(line => line.trim().startsWith('-'))
+      .map(line => line.replace(/^-\s*/, '').trim())
+      .filter(role => !role.startsWith('<') && role.length > 0);
+    if (roles.length > 0) {
+      parsed.suggestedRoles = roles;
+    }
+  }
+
+  // Extract Allowed paths
+  const allowedMatch = templateContent.match(/### Allowed\n\n((?:- .+\n?)+?)(?=\n### Forbidden)/s);
+  if (allowedMatch) {
+    const paths = allowedMatch[1]
+      .split('\n')
+      .filter(line => line.trim().startsWith('-'))
+      .map(line => line.replace(/^-\s*/, '').replace(/`/g, '').trim())
+      .filter(path => !path.startsWith('<') && path.length > 0);
+    if (paths.length > 0) {
+      parsed.allowedPaths = paths.join(', ');
+    }
+  }
+
+  // Extract Forbidden paths
+  const forbiddenMatch = templateContent.match(/### Forbidden\n\n((?:- .+\n?)+?)(?=\n##)/s);
+  if (forbiddenMatch) {
+    const paths = forbiddenMatch[1]
+      .split('\n')
+      .filter(line => line.trim().startsWith('-'))
+      .map(line => line.replace(/^-\s*/, '').replace(/`/g, '').trim())
+      .filter(path => !path.startsWith('<') && path.length > 0);
+    if (paths.length > 0) {
+      parsed.forbiddenPaths = paths.join(', ');
+    }
+  }
+
+  // Extract Requirements (keep as template content for editor)
+  const requirementsMatch = templateContent.match(/## Requirements\n\n([\s\S]+?)(?=\n## Definition of Done)/);
+  if (requirementsMatch) {
+    parsed.requirements = requirementsMatch[1].trim();
+  }
+
+  // Extract Definition of Done
+  const doneMatch = templateContent.match(/## Definition of Done\n\n((?:- \[ \].+\n?)+)/);
+  if (doneMatch) {
+    const items = doneMatch[1]
+      .split('\n')
+      .filter(line => line.trim().startsWith('- ['))
+      .map(line => line.replace(/^-\s*\[ \]\s*/, '').trim())
+      .filter(item => !item.startsWith('<') && item.length > 0);
+    if (items.length > 0) {
+      parsed.definitionOfDone = items;
+    }
+  }
+
+  return parsed;
+}
+
+async function promptForTask(projectRoot: string, templateName?: string): Promise<TaskAnswers> {
+  // Find available templates
+  const templates = await findTaskTemplates(projectRoot);
+  let selectedTemplate: TaskTemplate | undefined;
+  let templateDefaults: ParsedTemplate = {};
+
+  // If template name provided via CLI, find it
+  if (templateName) {
+    selectedTemplate = templates.find(
+      t => t.name.toLowerCase().replace(/\s/g, '-') === templateName.toLowerCase()
+    );
+    if (!selectedTemplate) {
+      throw new Error(`Template "${templateName}" not found. Available: ${templates.map(t => t.name).join(', ')}`);
+    }
+    templateDefaults = parseTemplate(selectedTemplate.content);
+  } else if (templates.length > 0) {
+    // Prompt for template selection
+    const { template } = await inquirer.prompt([
+      {
+        type: 'list',
+        name: 'template',
+        message: 'Select a template (or none to start from scratch):',
+        choices: [
+          { name: 'None (start from scratch)', value: 'none' },
+          ...templates.map(t => ({ name: t.name, value: t.name })),
+        ],
+        default: 'none',
+      },
+    ]);
+
+    if (template !== 'none') {
+      selectedTemplate = templates.find(t => t.name === template);
+      if (selectedTemplate) {
+        templateDefaults = parseTemplate(selectedTemplate.content);
+      }
+    }
+  }
+
   // Obtener roles disponibles
   const rolesDir = join(projectRoot, '.ai', 'roles');
   let availableRoles: string[] = ['developer', 'architect', 'tester'];
@@ -127,6 +344,7 @@ async function promptForTask(projectRoot: string): Promise<TaskAnswers> {
       type: 'input',
       name: 'goal',
       message: 'Task goal (one sentence):',
+      default: templateDefaults.goal,
       validate: (input) => input.length > 10 ? true : 'Goal must be descriptive',
     },
     {
@@ -141,40 +359,44 @@ async function promptForTask(projectRoot: string): Promise<TaskAnswers> {
         'docs',
         'architecture',
       ],
+      default: templateDefaults.taskType,
     },
     {
       type: 'checkbox',
       name: 'suggestedRoles',
       message: 'Suggested roles:',
       choices: availableRoles,
-      default: ['developer'],
+      default: templateDefaults.suggestedRoles || ['developer'],
     },
     {
       type: 'input',
       name: 'allowedPaths',
       message: 'Allowed paths (comma-separated globs):',
-      default: 'src/**',
+      default: templateDefaults.allowedPaths || 'src/**',
     },
     {
       type: 'input',
       name: 'forbiddenPaths',
       message: 'Forbidden paths (comma-separated):',
-      default: '.env*, src/config/**',
+      default: templateDefaults.forbiddenPaths || '.env*, src/config/**',
     },
     {
       type: 'editor',
       name: 'requirements',
       message: 'Requirements (opens editor):',
-      default: '- Requirement 1\n- Requirement 2',
+      default: templateDefaults.requirements || '- Requirement 1\n- Requirement 2',
     },
     {
       type: 'input',
       name: 'definitionOfDone',
       message: 'Definition of Done (comma-separated criteria):',
-      default: 'Implementation complete, Tests pass, Lint passes',
+      default: templateDefaults.definitionOfDone?.join(', ') || 'Implementation complete, Tests pass, Lint passes',
       filter: (input: string) => input.split(',').map(s => s.trim()),
     },
-  ]);
+  ]).then(answers => ({
+    ...answers,
+    template: selectedTemplate?.name,
+  }));
 }
 
 async function createTaskFile(
@@ -202,6 +424,22 @@ async function createTaskFile(
   const fileName = `${paddedNumber}-${slug}.md`;
   const filePath = join(tasksDir, fileName);
 
+  // If template was used, try to preserve more of its structure
+  let requirementsContent = answers.requirements;
+  if (answers.template) {
+    // Try to load template to preserve its structure better
+    const templates = await findTaskTemplates(projectRoot);
+    const template = templates.find(t => t.name === answers.template);
+    if (template) {
+      // Extract requirements section from template if it has more structure
+      const requirementsMatch = template.content.match(/## Requirements\n\n([\s\S]+?)(?=\n## Definition of Done)/);
+      if (requirementsMatch && requirementsMatch[1].includes('\n###')) {
+        // Template has structured requirements, use it as base
+        requirementsContent = requirementsMatch[1].trim();
+      }
+    }
+  }
+
   // Generar contenido
   const content = `# TASK
 
@@ -223,13 +461,14 @@ ${answers.allowedPaths.split(',').map(p => `- \`${p.trim()}\``).join('\n')}
 ${answers.forbiddenPaths.split(',').map(p => `- \`${p.trim()}\``).join('\n')}
 
 ## Requirements
-${answers.requirements}
+${requirementsContent}
 
 ## Definition of Done
 ${answers.definitionOfDone.map(c => `- [ ] ${c}`).join('\n')}
 
 ## Notes
 - Created: ${new Date().toISOString()}
+${answers.template ? `- Template: ${answers.template}` : ''}
 `;
 
   await writeFile(filePath, content);

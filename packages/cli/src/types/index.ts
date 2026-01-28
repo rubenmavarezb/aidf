@@ -46,6 +46,22 @@ export interface TaskScope {
   ask_before?: string[];
 }
 
+export interface ResumeAttempt {
+  resumedAt: string;
+  completedAt?: string;
+  status: 'resumed' | 'completed' | 'blocked_again';
+  iterations: number;
+}
+
+export interface BlockedStatus {
+  previousIteration: number;
+  filesModified: string[];
+  blockingIssue: string;
+  startedAt: string;
+  blockedAt: string;
+  attemptHistory?: ResumeAttempt[];
+}
+
 export interface ParsedTask {
   filePath: string;
   goal: string;
@@ -56,6 +72,7 @@ export interface ParsedTask {
   definitionOfDone: string[];
   notes?: string;
   raw: string;
+  blockedStatus?: BlockedStatus;
 }
 
 export interface ParsedRole {
@@ -155,6 +172,8 @@ export interface ExecutorOptions {
   autoPush: boolean;
   dryRun: boolean;
   verbose: boolean;
+  resume?: boolean;
+  logger?: import('../utils/logger.js').Logger;
   onIteration?: (state: ExecutorState) => void;
   onAskUser?: (question: string, files: string[]) => Promise<boolean>;
 }
@@ -167,4 +186,48 @@ export interface ExecutorResult {
   error?: string;
   blockedReason?: string;
   taskPath: string;
+}
+
+// === Status Command Types ===
+
+export interface TaskStats {
+  pending: number;
+  inProgress: number;
+  completed: number;
+  blocked: number;
+  total: number;
+}
+
+export interface LastExecution {
+  date: Date;
+  duration?: string;
+  result: 'success' | 'failed' | 'blocked';
+  task?: string;
+}
+
+export interface StatusData {
+  tasks: TaskStats;
+  lastExecution: LastExecution | null;
+  recentFiles: string[];
+  provider: {
+    type: string;
+    model?: string;
+  };
+}
+
+// === Logging Types ===
+
+export interface LogContext {
+  task?: string;
+  iteration?: number;
+  files?: string[];
+  command?: string;
+  [key: string]: unknown;
+}
+
+export interface StructuredLogEntry {
+  timestamp: string;
+  level: 'debug' | 'info' | 'warn' | 'error' | 'success';
+  message: string;
+  context?: LogContext;
 }

@@ -70,14 +70,25 @@ export function createInitCommand(): Command {
     .option('-y, --yes', 'Use defaults without prompting')
     .option('-f, --force', 'Overwrite existing .ai directory')
     .option('-v, --verbose', 'Verbose output')
+    .option('--log-format <format>', 'Log format (text|json)', 'text')
+    .option('--log-file <path>', 'Write logs to file')
+    .option('--log-rotate', 'Enable log rotation (append timestamp to filename)')
     .action(async (options) => {
-      const logger = new Logger(options.verbose);
+      const logger = new Logger({
+        verbose: options.verbose,
+        logFormat: options.logFormat as 'text' | 'json' | undefined,
+        logFile: options.logFile,
+        logRotate: options.logRotate,
+      });
       const projectPath = process.cwd();
 
       try {
+        logger.setContext({ command: 'init' });
         await runInit(projectPath, options, logger);
+        await logger.close();
       } catch (error) {
         logger.error(error instanceof Error ? error.message : 'Unknown error');
+        await logger.close();
         process.exit(1);
       }
     });

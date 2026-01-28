@@ -755,4 +755,226 @@ N/A
       expect(context.role.name).toBe('developer');
     });
   });
+
+  describe('parseBlockedStatus', () => {
+    it('should parse blocked status from task file', async () => {
+      const taskContent = `# TASK: Blocked Task
+
+## Goal
+
+Test blocked status parsing.
+
+## Task Type
+
+component
+
+## Suggested Roles
+
+- developer
+
+## Scope
+
+### Allowed
+
+- \`src/**\`
+
+### Forbidden
+
+- \`config/**\`
+
+## Requirements
+
+N/A
+
+## Definition of Done
+
+- [ ] Done
+
+## Status: BLOCKED
+
+### Execution Log
+- **Started:** 2024-01-01T10:00:00.000Z
+- **Iterations:** 5
+- **Blocked at:** 2024-01-01T11:00:00.000Z
+
+### Blocking Issue
+\`\`\`
+Missing API key configuration
+\`\`\`
+
+### Files Modified
+- \`src/api/client.ts\`
+- \`src/config/settings.ts\`
+
+---
+@developer: Review and provide guidance, then run \`aidf run --resume task.md\`
+`;
+      const taskPath = join(aiDir, 'tasks', 'blocked-task.md');
+      await writeFile(taskPath, taskContent);
+      await writeFile(join(aiDir, 'AGENTS.md'), '# AGENTS.md\n\n## Project Overview\n\nTest');
+
+      const loader = new ContextLoader(testDir);
+      const task = await loader.parseTask(taskPath);
+
+      expect(task.blockedStatus).toBeDefined();
+      expect(task.blockedStatus?.previousIteration).toBe(5);
+      expect(task.blockedStatus?.startedAt).toBe('2024-01-01T10:00:00.000Z');
+      expect(task.blockedStatus?.blockedAt).toBe('2024-01-01T11:00:00.000Z');
+      expect(task.blockedStatus?.blockingIssue).toBe('Missing API key configuration');
+      expect(task.blockedStatus?.filesModified).toEqual([
+        'src/api/client.ts',
+        'src/config/settings.ts',
+      ]);
+    });
+
+    it('should return undefined for non-blocked task', async () => {
+      const taskContent = `# TASK: Normal Task
+
+## Goal
+
+Test normal task.
+
+## Task Type
+
+component
+
+## Suggested Roles
+
+- developer
+
+## Scope
+
+### Allowed
+
+- \`src/**\`
+
+### Forbidden
+
+- none
+
+## Requirements
+
+N/A
+
+## Definition of Done
+
+- [ ] Done
+`;
+      const taskPath = join(aiDir, 'tasks', 'normal-task.md');
+      await writeFile(taskPath, taskContent);
+      await writeFile(join(aiDir, 'AGENTS.md'), '# AGENTS.md\n\n## Project Overview\n\nTest');
+
+      const loader = new ContextLoader(testDir);
+      const task = await loader.parseTask(taskPath);
+
+      expect(task.blockedStatus).toBeUndefined();
+    });
+
+    it('should handle task with no files modified', async () => {
+      const taskContent = `# TASK: Blocked No Files
+
+## Goal
+
+Test blocked with no files.
+
+## Task Type
+
+component
+
+## Suggested Roles
+
+- developer
+
+## Scope
+
+### Allowed
+
+- \`src/**\`
+
+### Forbidden
+
+- none
+
+## Requirements
+
+N/A
+
+## Definition of Done
+
+- [ ] Done
+
+## Status: BLOCKED
+
+### Execution Log
+- **Started:** 2024-01-01T10:00:00.000Z
+- **Iterations:** 0
+- **Blocked at:** 2024-01-01T10:05:00.000Z
+
+### Blocking Issue
+\`\`\`
+Initial blocker
+\`\`\`
+
+### Files Modified
+_None_
+
+---
+@developer: Review and provide guidance, then run \`aidf run --resume task.md\`
+`;
+      const taskPath = join(aiDir, 'tasks', 'blocked-no-files.md');
+      await writeFile(taskPath, taskContent);
+      await writeFile(join(aiDir, 'AGENTS.md'), '# AGENTS.md\n\n## Project Overview\n\nTest');
+
+      const loader = new ContextLoader(testDir);
+      const task = await loader.parseTask(taskPath);
+
+      expect(task.blockedStatus).toBeDefined();
+      expect(task.blockedStatus?.filesModified).toEqual([]);
+    });
+
+    it('should handle task with completed status', async () => {
+      const taskContent = `# TASK: Completed Task
+
+## Goal
+
+Test completed task.
+
+## Task Type
+
+component
+
+## Suggested Roles
+
+- developer
+
+## Scope
+
+### Allowed
+
+- \`src/**\`
+
+### Forbidden
+
+- none
+
+## Requirements
+
+N/A
+
+## Definition of Done
+
+- [ ] Done
+
+## Status: ✅ COMPLETED
+`;
+      const taskPath = join(aiDir, 'tasks', 'completed-task.md');
+      await writeFile(taskPath, taskContent);
+      await writeFile(join(aiDir, 'AGENTS.md'), '# AGENTS.md\n\n## Project Overview\n\nTest');
+
+      const loader = new ContextLoader(testDir);
+      const task = await loader.parseTask(taskPath);
+
+      expect(task.blockedStatus).toBeUndefined();
+    });
+  });
 });

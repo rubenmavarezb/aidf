@@ -3,7 +3,7 @@
 import { readFile } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join, dirname } from 'path';
-import type { LoadedContext, ParsedTask, ParsedRole, ParsedAgents, TaskScope } from '../types/index.js';
+import type { LoadedContext, ParsedTask, ParsedRole, ParsedAgents, TaskScope, BlockedStatus } from '../types/index.js';
 
 export class ContextLoader {
   private aiDir: string;
@@ -48,6 +48,7 @@ export class ContextLoader {
     }
 
     const content = await readFile(taskPath, 'utf-8');
+    const blockedStatus = this.parseBlockedStatus(content);
 
     return {
       filePath: taskPath,
@@ -59,6 +60,89 @@ export class ContextLoader {
       definitionOfDone: this.extractChecklist(content, 'Definition of Done'),
       notes: this.extractSection(content, 'Notes') || undefined,
       raw: content,
+      blockedStatus,
+    };
+  }
+
+  /**
+   * Parsea el estado BLOCKED de un archivo de task
+   */
+  parseBlockedStatus(content: string): BlockedStatus | undefined {
+    // Check if task has BLOCKED status
+    if (!content.includes('## Status:') || !content.includes('BLOCKED')) {
+      return undefined;
+    }
+
+    // Extract Status section
+    const statusSection = this.extractSection(content, 'Status');
+    if (!statusSection.includes('BLOCKED')) {
+      return undefined;
+    }
+
+    // Extract Execution Log
+    const executionLogMatch = statusSection.match(/### Execution Log\n([\s\S]*?)(?=\n### |$)/i);
+    if (!executionLogMatch) {
+      return undefined;
+    }
+
+    const executionLog = executionLogMatch[1];
+    
+    // Extract iteration number
+    const iterationsMatch = executionLog.match(/\*\*Iterations:\*\*\s*(\d+)/i);
+    const previousIteration = iterationsMatch ? parseInt(iterationsMatch[1], 10) : 0;
+
+    // Extract started timestamp
+    const startedMatch = executionLog.match(/\*\*Started:\*\*\s*(.+)/i);
+    const startedAt = startedMatch ? startedMatch[1].trim() : '';
+
+    // Extract blocked timestamp
+    const blockedMatch = executionLog.match(/\*\*Blocked at:\*\*\s*(.+)/i);
+    const blockedAt = blockedMatch ? blockedMatch[1].trim() : '';
+
+    // Extract Blocking Issue
+    const blockingIssueMatch = statusSection.match(/### Blocking Issue\n```\n?([\s\S]*?)```/i);
+    const blockingIssue = blockingIssueMatch ? blockingIssueMatch[1].trim() : '';
+
+    // Extract Files Modified
+    const filesModifiedMatch = statusSection.match(/### Files Modified\n([\s\S]*?)(?=\n---|\n### |$)/i);
+    const filesModified: string[] = [];
+    if (filesModifiedMatch) {
+      const filesText = filesModifiedMatch[1];
+      filesText.split('\n').forEach(line => {
+        const fileMatch = line.match(/-\s*`([^`]+)`/);
+        if (fileMatch) {
+          filesModified.push(fileMatch[1]);
+        }
+      });
+      // Handle _None_ case
+      if (filesModified.length === 0 && filesText.includes('_None_')) {
+        // Keep empty array
+      }
+    }
+
+    // Extract Resume Attempt History if present
+    const attemptHistoryMatch = statusSection.match(/### Resume Attempt History\n([\s\S]*?)(?=\n### |$)/i);
+    const attemptHistory: BlockedStatus['attemptHistory'] = [];
+    if (attemptHistoryMatch) {
+      const historyText = attemptHistoryMatch[1];
+      // Parse attempt entries (simplified - assumes one attempt per block)
+      const resumedMatch = historyText.match(/\*\*Resumed at:\*\*\s*(.+)/i);
+      if (resumedMatch) {
+        attemptHistory.push({
+          resumedAt: resumedMatch[1].trim(),
+          status: 'resumed',
+          iterations: 0, // Will be updated when attempt completes
+        });
+      }
+    }
+
+    return {
+      previousIteration,
+      filesModified,
+      blockingIssue,
+      startedAt,
+      blockedAt,
+      attemptHistory: attemptHistory.length > 0 ? attemptHistory : undefined,
     };
   }
 
