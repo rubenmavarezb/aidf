@@ -4,6 +4,14 @@
 
 <Refactor [area/component] to [improvement goal]. What will be improved when this task is complete?>
 
+## Pre-Flight Checklist
+
+Before starting, verify:
+- [ ] I have read AGENTS.md completely
+- [ ] I understand the existing patterns
+- [ ] I know the quality check commands
+- [ ] I understand the scope boundaries
+
 ## Task Type
 
 refactor
@@ -66,6 +74,34 @@ refactor
 - <Pattern 1: e.g., Extract function, Split component, etc.>
 - <Pattern 2>
 - <Pattern 3>
+
+## Execution Steps
+
+FOLLOW THESE STEPS IN ORDER:
+
+### Step 1: Research (do NOT write code yet)
+1. Read AGENTS.md completely
+2. Read all files in Scope/Allowed
+3. Identify existing patterns to follow
+4. List all files that will be created/modified
+
+### Step 2: Plan
+1. Document changes for each file
+2. Identify test cases needed
+3. Verify approach follows conventions
+
+### Step 3: Implement
+1. Ensure tests exist for current behavior
+2. Make incremental changes
+3. Verify tests still pass after each change
+4. Update affected imports
+5. Remove dead code
+
+### Step 4: Verify
+1. Run: `[lint_command]`
+2. Run: `[typecheck_command]`
+3. Run: `[test_command]`
+4. ALL must pass before proceeding
 
 ## Definition of Done
 

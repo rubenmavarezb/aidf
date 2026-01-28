@@ -5,6 +5,31 @@
 
 ---
 
+## Identity
+
+This project is [PROJECT_NAME], a [TYPE: web app | mobile app | API | library | CLI tool] that [PRIMARY_PURPOSE].
+
+IMPORTANT: This document defines the single source of truth for AI assistants working on this project. All conventions, boundaries, and quality standards defined here MUST be followed.
+
+CRITICAL: Violating boundaries or skipping quality gates invalidates ALL work done.
+
+---
+
+## Pre-Flight Checklist
+
+Before starting ANY work, verify:
+
+- [ ] Read the entire AGENTS.md document
+- [ ] Understand the task scope (Allowed/Forbidden paths)
+- [ ] Identify which role to use (if specified)
+- [ ] Review relevant conventions for the work type
+- [ ] Check quality gates requirements
+- [ ] Verify environment is set up correctly
+
+IMPORTANT: Skipping this checklist leads to rejected work.
+
+---
+
 ## Project Overview
 
 [PROJECT_NAME] is a [TYPE: web app | mobile app | API | library | CLI tool] that [PRIMARY_PURPOSE].
@@ -69,23 +94,92 @@
 
 ---
 
+## Environment
+
+<env>
+Language: [Language] [version]
+Framework: [Framework] [version]
+Package Manager: [package_manager]
+Node Version: [version]
+</env>
+
+### Required Environment Variables
+
+| Variable | Purpose | Example | Required |
+|----------|---------|---------|----------|
+| `[VAR_NAME]` | [Description] | `[example]` | Yes/No |
+
+### Configuration Files
+
+| File | Purpose | Notes |
+|------|---------|-------|
+| `[config_file]` | [Description] | [Notes] |
+
+IMPORTANT: NEVER commit sensitive values. Use `.env.example` for documentation.
+
+---
+
 ## Conventions
+
+IMPORTANT: Match these patterns EXACTLY when writing new code. Deviations will be rejected.
 
 ### File Naming
 
-| Type | Convention | Example |
-|------|------------|---------|
-| Components | [Convention] | `[Example]` |
-| Utilities | [Convention] | `[Example]` |
-| Tests | [Convention] | `[Example]` |
-| Styles | [Convention] | `[Example]` |
-| Types | [Convention] | `[Example]` |
+| Type | Pattern | Example | Wrong |
+|------|---------|---------|-------|
+| Components | [Convention] | `[Example]` | `[Wrong example]` |
+| Utilities | [Convention] | `[Example]` | `[Wrong example]` |
+| Tests | [Convention] | `[Example]` | `[Wrong example]` |
+| Styles | [Convention] | `[Example]` | `[Wrong example]` |
+| Types | [Convention] | `[Example]` | `[Wrong example]` |
 
 ### Code Style
 
-- [Style rule 1]
-- [Style rule 2]
-- [Style rule 3]
+#### Component Pattern
+
+```typescript
+// ✅ CORRECT - Named export, function declaration
+export function ComponentName({ prop }: Props) {
+  return <div>...</div>;
+}
+
+// ❌ WRONG - Default export
+export default function ComponentName() { ... }
+```
+
+Why: Named exports enable better tree-shaking and IDE support.
+
+#### Import Order
+
+```typescript
+// ✅ CORRECT - Ordered imports
+import { useState } from 'react';              // 1. External
+import { Button } from '@/components/ui';     // 2. Internal absolute
+import { formatDate } from '../utils';          // 3. Relative
+import styles from './Component.module.css';   // 4. Styles
+
+// ❌ WRONG - Mixed order
+import styles from './styles';
+import { formatDate } from '../utils';
+import { useState } from 'react';
+```
+
+Why: Consistent import order prevents merge conflicts and improves readability.
+
+#### Type Definitions
+
+```typescript
+// ✅ CORRECT - Interface in separate file or top of file
+export interface ComponentProps {
+  title: string;
+  count?: number;
+}
+
+// ❌ WRONG - Inline object types
+export function Component({ title, count }: { title: string; count?: number }) { ... }
+```
+
+Why: Separate type definitions improve reusability and maintainability.
 
 ### Component/Module Structure
 
@@ -101,6 +195,8 @@
 
 ## Quality Standards
 
+IMPORTANT: These standards apply to ALL code in this project.
+
 ### Testing
 
 - Minimum coverage: [X]%
@@ -114,6 +210,8 @@
 - [Requirement 1]
 - [Requirement 2]
 
+MUST: All code must be fully typed. No `any` types allowed.
+
 ### Code Style
 
 - Linting: [Tool] with [config]
@@ -122,24 +220,59 @@
 
 ---
 
+## Quality Gates
+
+CRITICAL: Before ANY task can be marked complete, ALL of these MUST pass.
+
+### Required Checks
+
+| Check | Command | Expected Result |
+|-------|---------|-----------------|
+| Lint | `[lint_command]` | Zero errors, zero warnings |
+| Types | `[typecheck_command]` | Zero errors |
+| Tests | `[test_command]` | All tests pass |
+| Build | `[build_command]` | Builds successfully |
+
+### Verification Process
+
+1. Run ALL commands in the table above
+2. Capture output of each command
+3. If ANY fails, task is NOT complete
+4. Fix issues and re-run ALL checks
+5. Only mark complete when ALL pass
+
+IMPORTANT: Partial passes are not acceptable. ALL gates must pass.
+
+MUST: Document any gate failures and how they were resolved.
+
+---
+
 ## Boundaries
 
-### Never Modify Without Approval
+### NEVER Do (will reject the work)
 
-- `[path]` - [Reason]
-- `[path]` - [Reason]
-- `[path]` - [Reason]
+- **NEVER** modify files in `[path]` without explicit approval
+- **NEVER** add new dependencies to `package.json` without approval
+- **NEVER** skip quality gates
+- **NEVER** modify files outside the task scope
+- **NEVER** commit sensitive values (API keys, passwords, tokens)
 
-### Never Do
+CRITICAL: Violating these boundaries invalidates ALL work done.
 
-- [Forbidden action 1]
-- [Forbidden action 2]
-- [Forbidden action 3]
+### ALWAYS Do
+
+- **ALWAYS** check scope before modifying files
+- **ALWAYS** run quality gates before marking complete
+- **ALWAYS** follow conventions exactly
+- **ALWAYS** write tests for new functionality
+- **ALWAYS** verify environment variables are set correctly
 
 ### Requires Discussion
 
 - [Action requiring discussion 1]
 - [Action requiring discussion 2]
+
+IMPORTANT: When in doubt, ask before modifying.
 
 ---
 
@@ -147,26 +280,47 @@
 
 ### Development
 
-```bash
-[command]     # [Description]
-[command]     # [Description]
-[command]     # [Description]
-```
+| Command | Description | When to Run |
+|---------|-------------|-------------|
+| `[command]` | [Description] | [When: e.g., "Before starting new feature", "After pulling changes"] |
+| `[command]` | [Description] | [When] |
+| `[command]` | [Description] | [When] |
 
 ### Quality Checks
 
-```bash
-[command]     # [Description]
-[command]     # [Description]
-[command]     # [Description]
-```
+CRITICAL: These MUST pass before marking any task complete.
+
+| Command | Description | When to Run |
+|---------|-------------|-------------|
+| `[lint_command]` | Run linter | Before every commit, after code changes |
+| `[typecheck_command]` | Type checking | Before every commit, after code changes |
+| `[test_command]` | Run tests | Before every commit, after code changes |
+| `[build_command]` | Build project | Before every commit, after code changes |
 
 ### Build & Deploy
 
-```bash
-[command]     # [Description]
-[command]     # [Description]
-```
+| Command | Description | When to Run |
+|---------|-------------|-------------|
+| `[command]` | [Description] | [When] |
+| `[command]` | [Description] | [When] |
+
+---
+
+## Structured Blocks
+
+Roles and tasks use XML-style blocks to structure AI thinking. These are the available blocks:
+
+| Block | Used By | Purpose |
+|-------|---------|---------|
+| `<task_analysis>` | All roles | Analyze before implementing |
+| `<completion_check>` | All roles | Verify before marking complete |
+| `<implementation_plan>` | Developer | Plan code changes |
+| `<design_rationale>` | Architect | Document design decisions |
+| `<test_plan>` | Tester | Plan test cases |
+| `<pr_analysis>` | Reviewer | Analyze PR changes |
+| `<documentation_plan>` | Documenter | Plan documentation |
+
+See each role's "Response Format" section for detailed block templates.
 
 ---
 
@@ -182,4 +336,4 @@
 
 ---
 
-> **Remember**: Update this document when patterns change, decisions are made, or you learn from AI mistakes.
+IMPORTANT: Update this document when patterns change, decisions are made, or you learn from AI mistakes. This document must remain accurate and current.

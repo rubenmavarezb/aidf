@@ -4,6 +4,14 @@
 
 <Improve test coverage for [area/component] to [target]% coverage. What will be tested when this task is complete?>
 
+## Pre-Flight Checklist
+
+Before starting, verify:
+- [ ] I have read AGENTS.md completely
+- [ ] I understand the existing patterns
+- [ ] I know the quality check commands
+- [ ] I understand the scope boundaries
+
 ## Task Type
 
 test
@@ -80,6 +88,35 @@ test
 - <Utility 1: e.g., renderWithProviders>
 - <Utility 2: e.g., createMockData>
 - <Reference to test setup files>
+
+## Execution Steps
+
+FOLLOW THESE STEPS IN ORDER:
+
+### Step 1: Research (do NOT write code yet)
+1. Read AGENTS.md completely
+2. Read all files in Scope/Allowed
+3. Identify existing patterns to follow
+4. List all files that will be created/modified
+
+### Step 2: Plan
+1. Document changes for each file
+2. Identify test cases needed
+3. Verify approach follows conventions
+
+### Step 3: Implement
+1. Identify untested code paths
+2. Prioritize by risk/importance
+3. Write tests for happy path
+4. Write tests for edge cases
+5. Write tests for error cases
+6. Verify coverage increase
+
+### Step 4: Verify
+1. Run: `[lint_command]`
+2. Run: `[typecheck_command]`
+3. Run: `[test_command]`
+4. ALL must pass before proceeding
 
 ## Definition of Done
 

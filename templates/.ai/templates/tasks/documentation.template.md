@@ -4,6 +4,14 @@
 
 <Create/update documentation for [subject]. What will be documented when this task is complete?>
 
+## Pre-Flight Checklist
+
+Before starting, verify:
+- [ ] I have read AGENTS.md completely
+- [ ] I understand the existing patterns
+- [ ] I know the quality check commands
+- [ ] I understand the scope boundaries
+
 ## Task Type
 
 docs
@@ -82,6 +90,35 @@ docs
 - <Standard 1: e.g., Markdown format>
 - <Standard 2: e.g., Code examples must be runnable>
 - <Standard 3: e.g., Include screenshots for UI docs>
+
+## Execution Steps
+
+FOLLOW THESE STEPS IN ORDER:
+
+### Step 1: Research (do NOT write code yet)
+1. Read AGENTS.md completely
+2. Read all files in Scope/Allowed
+3. Identify existing patterns to follow
+4. List all files that will be created/modified
+
+### Step 2: Plan
+1. Document changes for each file
+2. Identify test cases needed
+3. Verify approach follows conventions
+
+### Step 3: Implement
+1. Review existing documentation structure
+2. Identify gaps and needed content
+3. Write documentation following project standards
+4. Add code examples (test them)
+5. Verify links and formatting
+6. Review for clarity and completeness
+
+### Step 4: Verify
+1. Run: `[lint_command]`
+2. Run: `[typecheck_command]`
+3. Run: `[test_command]`
+4. ALL must pass before proceeding
 
 ## Definition of Done
 
