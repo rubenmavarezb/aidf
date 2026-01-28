@@ -45,7 +45,7 @@ export function findPackageRoot(): string {
       // Read package.json to verify it's the CLI package
       try {
         const content = JSON.parse(readFileSync(packageJson, 'utf-8'));
-        if (content.name === '@aidf/cli') {
+        if (content.name === 'aidf' || content.name === '@aidf/cli') {
           return currentDir;
         }
       } catch {
