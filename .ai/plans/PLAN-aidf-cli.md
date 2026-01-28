@@ -19,13 +19,13 @@
 
 ---
 
-## Fase 2: Polish & Release
+## Fase 2: Polish & Release ✅ COMPLETADA
 
 | Task | Auto-Mode | Dependencias | Prioridad | Status |
 |------|-----------|--------------|-----------|--------|
 | 011-ci-cd-github-actions | ✅ SÍ | ninguna | Alta | ✅ Done |
 | 012-publish-npm | ⚠️ MANUAL | 011 | Alta | ✅ Done |
-| 013-improve-readme | ✅ SÍ | ninguna | Alta | ⏳ |
+| 013-improve-readme | ✅ SÍ | ninguna | Alta | ✅ Done |
 | 014-more-templates | ✅ SÍ | ninguna | Media | ✅ Done |
 
 ---
@@ -58,6 +58,21 @@
 | 022-progress-bar | ✅ SÍ | ninguna | Media | ✅ Done |
 | 023-structured-logs | ✅ SÍ | ninguna | Baja | ✅ Done |
 | 024-notifications | ⚠️ PARCIAL | ninguna | Baja | ⏳ |
+
+---
+
+## Fase 6: Framework Documentation Enhancement
+
+| Task | Auto-Mode | Dependencias | Prioridad | Status |
+|------|-----------|--------------|-----------|--------|
+| 025-agents-production-structure | ✅ SÍ | ninguna | Alta | ✅ Done |
+| 026-roles-interaction-examples | ✅ SÍ | ninguna | Alta | ✅ Done |
+| 027-xml-structured-blocks | ✅ SÍ | ninguna | Media | ✅ Done |
+| 028-task-numbered-workflows | ✅ SÍ | ninguna | Media | ✅ Done |
+| 029-roles-behavior-rules | ✅ SÍ | ninguna | Alta | ✅ Done |
+| 030-quality-gates-enforcement | ✅ SÍ | ninguna | Alta | ✅ Done |
+| 031-commands-with-context | ✅ SÍ | ninguna | Media | ✅ Done |
+| 032-conventions-with-examples | ✅ SÍ | ninguna | Media | ✅ Done |
 
 ---
 
@@ -115,7 +130,7 @@ Fase 3 (Features) - Independientes
 ### Fase 2: Polish & Release
 - [x] 011-ci-cd-github-actions (2026-01-28)
 - [x] 012-publish-npm (2026-01-28)
-- [ ] 013-improve-readme
+- [x] 013-improve-readme (2026-01-28)
 - [x] 014-more-templates (2026-01-28)
 
 ### Fase 3: Features
@@ -133,3 +148,13 @@ Fase 3 (Features) - Independientes
 - [x] 022-progress-bar (2026-01-28)
 - [x] 023-structured-logs (2026-01-28)
 - [ ] 024-notifications
+
+### Fase 6: Framework Documentation Enhancement
+- [x] 025-agents-production-structure (2026-01-28)
+- [x] 026-roles-interaction-examples (2026-01-28)
+- [x] 027-xml-structured-blocks (2026-01-28)
+- [x] 028-task-numbered-workflows (2026-01-28)
+- [x] 029-roles-behavior-rules (2026-01-28)
+- [x] 030-quality-gates-enforcement (2026-01-28)
+- [x] 031-commands-with-context (2026-01-28)
+- [x] 032-conventions-with-examples (2026-01-28)

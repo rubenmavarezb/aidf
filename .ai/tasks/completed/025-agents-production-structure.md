@@ -77,3 +77,9 @@ CRITICAL: Violating these boundaries invalidates ALL work done.
 - Referencia: System prompt de Claude Code v0.2.9
 - Referencia: System prompt de GPT-4o
 - Mantener compatibilidad con ejemplos existentes en `examples/`
+
+## Status: ✅ COMPLETED
+
+- **Completed:** 2026-01-28
+- **Agent:** Claude Code (session 013-improve-readme)
+- **PR:** #2

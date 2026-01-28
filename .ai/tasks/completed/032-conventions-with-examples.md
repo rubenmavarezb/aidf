@@ -127,3 +127,9 @@ Los ejemplos en `examples/` deben tener patrones reales con código:
 - Los ejemplos deben ser copiables directamente
 - El "Why" ayuda a la IA a entender, no solo memorizar
 - Mantener ejemplos cortos (máximo 10 líneas por bloque)
+
+## Status: ✅ COMPLETED
+
+- **Completed:** 2026-01-28
+- **Agent:** Claude Code (parallel session)
+- **PR:** #2

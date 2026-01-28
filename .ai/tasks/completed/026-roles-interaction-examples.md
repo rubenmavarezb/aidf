@@ -99,3 +99,9 @@ User: "[Petición típica del usuario]"
 - Inspirado en ejemplos de Claude Code: `user: 2+2 / assistant: 4`
 - Los ejemplos deben ser realistas y aplicables
 - Mantener consistencia de formato entre todos los roles
+
+## Status: ✅ COMPLETED
+
+- **Completed:** 2026-01-28
+- **Agent:** Claude Code (session 013-improve-readme)
+- **PR:** #2

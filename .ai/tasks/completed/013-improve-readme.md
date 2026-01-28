@@ -28,4 +28,9 @@ Crear documentación completa con ejemplos prácticos de uso.
 - [ ] docs/examples/ con tasks de ejemplo
 - [ ] Screenshots o GIFs del CLI
 
-## Status: 🔵 Ready
+## Status: ✅ COMPLETED
+
+- **Completed:** 2026-01-28
+- **Agent:** Claude Code (session 013-improve-readme)
+- **PR:** #2
+- **Files Modified:** 14 (README.md, AGENTS.template.md, 5 roles, TASK.template.md, 6 task templates)

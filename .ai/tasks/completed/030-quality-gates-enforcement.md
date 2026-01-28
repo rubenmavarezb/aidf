@@ -130,3 +130,9 @@ Configure these in your project's AGENTS.md:
 - Inspirado en las verificaciones obligatorias de Claude Code antes de commits
 - Los quality gates deben ser ejecutables (no subjetivos)
 - Permite proyectos sin todos los gates (ej: proyecto sin types)
+
+## Status: ✅ COMPLETED
+
+- **Completed:** 2026-01-28
+- **Agent:** Claude Code (session 013-improve-readme)
+- **PR:** #2

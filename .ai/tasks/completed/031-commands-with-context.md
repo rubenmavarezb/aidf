@@ -116,3 +116,9 @@ Actualizar los AGENTS.md en `examples/` para usar el nuevo formato con comandos 
 - Inspirado en cómo Claude Code documenta comandos de git
 - Los comandos deben ser copy-paste ready
 - El troubleshooting previene errores comunes de la IA
+
+## Status: ✅ COMPLETED
+
+- **Completed:** 2026-01-28
+- **Agent:** Claude Code (parallel session)
+- **PR:** #2
