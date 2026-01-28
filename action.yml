@@ -1,0 +1,94 @@
+name: 'AIDF - AI-Integrated Development Framework'
+description: 'Run AI-assisted development tasks using the AIDF CLI in CI/CD pipelines'
+author: 'rubenmavarezb'
+
+branding:
+  icon: cpu
+  color: blue
+
+inputs:
+  task:
+    description: 'Path to the AIDF task file'
+    required: true
+  provider:
+    description: 'AI provider (anthropic-api, openai-api, claude-cli)'
+    required: false
+    default: 'anthropic-api'
+  max-iterations:
+    description: 'Maximum number of execution iterations'
+    required: false
+    default: '50'
+  auto-pr:
+    description: 'Create a pull request with the changes'
+    required: false
+    default: 'false'
+  comment-on-issue:
+    description: 'GitHub issue number to post results as a comment'
+    required: false
+    default: ''
+  aidf-version:
+    description: 'Version of the aidf npm package to install'
+    required: false
+    default: 'latest'
+  working-directory:
+    description: 'Working directory for task execution'
+    required: false
+    default: '.'
+  node-version:
+    description: 'Node.js version to use'
+    required: false
+    default: '20'
+
+outputs:
+  status:
+    description: 'Task result: completed, blocked, or failed'
+    value: ${{ steps.run.outputs.status }}
+  files-changed:
+    description: 'Comma-separated list of files changed by the task'
+    value: ${{ steps.run.outputs.files-changed }}
+  pr-url:
+    description: 'URL of the created pull request (if auto-pr enabled)'
+    value: ${{ steps.run.outputs.pr-url }}
+  iterations:
+    description: 'Number of iterations executed'
+    value: ${{ steps.run.outputs.iterations }}
+  log-file:
+    description: 'Path to the JSON log file'
+    value: ${{ steps.run.outputs.log-file }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    - name: Install AIDF CLI
+      shell: bash
+      run: npm install -g aidf@${{ inputs.aidf-version }}
+
+    - name: Run AIDF task
+      id: run
+      shell: bash
+      env:
+        INPUT_TASK: ${{ inputs.task }}
+        INPUT_PROVIDER: ${{ inputs.provider }}
+        INPUT_MAX_ITERATIONS: ${{ inputs.max-iterations }}
+        INPUT_AUTO_PR: ${{ inputs.auto-pr }}
+        INPUT_WORKING_DIRECTORY: ${{ inputs.working-directory }}
+      run: ${{ github.action_path }}/.github/actions/aidf/entrypoint.sh
+
+    - name: Comment on issue
+      if: inputs.comment-on-issue != '' && always()
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        ${{ github.action_path }}/.github/actions/aidf/parse-output.sh \
+          "${{ inputs.comment-on-issue }}" \
+          "${{ steps.run.outputs.status }}" \
+          "${{ inputs.task }}" \
+          "${{ steps.run.outputs.iterations }}" \
+          "${{ steps.run.outputs.files-changed }}" \
+          "${{ steps.run.outputs.pr-url }}"

@@ -215,6 +215,43 @@ export interface StatusData {
   };
 }
 
+// === Watcher Types ===
+
+export type WatcherEventType = 'task_added' | 'task_modified' | 'config_changed';
+
+export interface WatcherEvent {
+  type: WatcherEventType;
+  filePath: string;
+  timestamp: Date;
+}
+
+export interface WatcherOptions {
+  debounceMs: number;
+  daemon: boolean;
+  verbose: boolean;
+  quiet: boolean;
+  logFormat?: 'text' | 'json';
+  logFile?: string;
+  logRotate?: boolean;
+  dryRun: boolean;
+  provider?: string;
+  maxIterations?: number;
+}
+
+export type WatcherStatus = 'idle' | 'watching' | 'executing' | 'stopping' | 'stopped';
+
+export interface WatcherState {
+  status: WatcherStatus;
+  startedAt?: Date;
+  tasksExecuted: number;
+  tasksCompleted: number;
+  tasksFailed: number;
+  tasksBlocked: number;
+  currentTask: string | null;
+  queuedTasks: string[];
+  processedTasks: Map<string, number>;
+}
+
 // === Logging Types ===
 
 export interface LogContext {

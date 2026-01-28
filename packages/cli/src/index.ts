@@ -5,6 +5,7 @@ import { createInitCommand } from './commands/init.js';
 import { createRunCommand } from './commands/run.js';
 import { createTaskCommand } from './commands/task.js';
 import { createStatusCommand } from './commands/status.js';
+import { createWatchCommand } from './commands/watch.js';
 
 const program = new Command();
 
@@ -18,5 +19,6 @@ program.addCommand(createInitCommand());
 program.addCommand(createRunCommand());
 program.addCommand(createTaskCommand());
 program.addCommand(createStatusCommand());
+program.addCommand(createWatchCommand());
 
 program.parse();
