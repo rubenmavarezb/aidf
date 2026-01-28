@@ -2,9 +2,8 @@
 
 import chalk from 'chalk';
 import ora, { Ora } from 'ora';
-import { createWriteStream, WriteStream } from 'fs';
+import { createWriteStream, mkdirSync, WriteStream } from 'fs';
 import { dirname } from 'path';
-import { mkdir } from 'fs/promises';
 import type { LogContext, StructuredLogEntry } from '../types/index.js';
 
 export type LogFormat = 'text' | 'json';
@@ -40,9 +39,7 @@ export class Logger {
       this.logFile = options.logFile ?? null;
       
       if (this.logFile) {
-        this.initializeLogFile(this.logFile, options.logRotate ?? false).catch(() => {
-          // Error handling is done in initializeLogFile
-        });
+        this.initializeLogFile(this.logFile, options.logRotate ?? false);
       }
     }
   }
@@ -77,34 +74,25 @@ export class Logger {
   }
 
   info(message: string): void {
-    if (!this.quiet) {
-      this.log('info', message);
-    }
+    this.log('info', message);
   }
 
   success(message: string): void {
-    if (!this.quiet) {
-      this.log('success', message);
-    }
+    this.log('success', message);
   }
 
   warn(message: string): void {
-    if (!this.quiet) {
-      this.log('warn', message);
-    }
+    this.log('warn', message);
   }
 
   error(message: string): void {
-    if (!this.quiet) {
-      this.log('error', message);
-    }
+    this.log('error', message);
   }
 
   debug(message: string): void {
-    if (this.verbose && !this.quiet) {
-      const timestamped = this.withTimestamp(message);
-      this.log('debug', timestamped);
-    }
+    if (!this.verbose) return;
+    const timestamped = this.withTimestamp(message);
+    this.log('debug', timestamped);
   }
 
   private withTimestamp(message: string): string {
@@ -124,21 +112,23 @@ export class Logger {
         message,
         context: Object.keys(this.context).length > 0 ? { ...this.context } : undefined,
       };
-      
+
       const jsonLine = JSON.stringify(entry) + '\n';
-      
+
       if (this.logStream) {
         this.logStream.write(jsonLine);
-      } else {
+      }
+      if (!this.logStream && !this.quiet) {
         process.stdout.write(jsonLine);
       }
     } else {
       // Text format
       const output = this.formatTextLog(level, message);
-      
+
       if (this.logStream) {
         this.logStream.write(output + '\n');
-      } else {
+      }
+      if (!this.logStream && !this.quiet) {
         if (level === 'error') {
           console.error(output);
         } else {
@@ -171,33 +161,31 @@ export class Logger {
   /**
    * Initialize log file with optional rotation
    */
-  private async initializeLogFile(filePath: string, rotate: boolean): Promise<void> {
+  private initializeLogFile(filePath: string, rotate: boolean): void {
     try {
       let finalPath = filePath;
-      
+
       if (rotate) {
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
         const ext = filePath.includes('.') ? filePath.substring(filePath.lastIndexOf('.')) : '.log';
         const base = filePath.includes('.') ? filePath.substring(0, filePath.lastIndexOf('.')) : filePath;
         finalPath = `${base}-${timestamp}${ext}`;
       }
-      
+
       // Ensure directory exists
       const dir = dirname(finalPath);
-      await mkdir(dir, { recursive: true });
-      
+      mkdirSync(dir, { recursive: true });
+
       // Create write stream in append mode
       this.logStream = createWriteStream(finalPath, { flags: 'a' });
-      
+
       // Handle stream errors
       this.logStream.on('error', (err) => {
-        // Fallback to stdout if file write fails
         console.error(`Failed to write to log file: ${err.message}`);
         this.logStream = null;
         this.logFile = null;
       });
     } catch (error) {
-      // Fallback to stdout if file creation fails
       console.error(`Failed to create log file: ${error instanceof Error ? error.message : 'Unknown error'}`);
       this.logStream = null;
       this.logFile = null;

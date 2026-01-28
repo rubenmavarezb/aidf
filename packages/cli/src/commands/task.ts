@@ -402,7 +402,7 @@ async function promptForTask(projectRoot: string, templateName?: string): Promis
 async function createTaskFile(
   projectRoot: string,
   answers: TaskAnswers,
-  logger: Logger
+  _logger: Logger
 ): Promise<string> {
   const tasksDir = join(projectRoot, '.ai', 'tasks');
 
@@ -485,7 +485,6 @@ interface TaskInfo {
 
 async function listTasks(projectRoot: string, includeAll: boolean): Promise<TaskInfo[]> {
   const tasksDir = join(projectRoot, '.ai', 'tasks');
-  const loader = new ContextLoader(projectRoot);
   const tasks: TaskInfo[] = [];
 
   try {

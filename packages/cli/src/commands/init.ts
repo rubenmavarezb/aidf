@@ -10,7 +10,6 @@ import { Logger } from '../utils/logger.js';
 import {
   copyDir,
   findTemplatesDir,
-  processTemplate,
   detectValidationCommands,
   getProjectName,
   type DetectedCommands,

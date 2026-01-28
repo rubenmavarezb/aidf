@@ -6,7 +6,7 @@ import { readdir, readFile } from 'fs/promises';
 import { join } from 'path';
 import inquirer from 'inquirer';
 import chalk from 'chalk';
-import { Executor, executeTask } from '../core/executor.js';
+import { executeTask } from '../core/executor.js';
 import { ContextLoader } from '../core/context-loader.js';
 import { Logger } from '../utils/logger.js';
 import { ProgressBar } from '../utils/progress-bar.js';

@@ -1,7 +1,7 @@
 // packages/cli/src/utils/logger.test.ts
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { Logger, type LoggerOptions } from './logger.js';
+import { Logger } from './logger.js';
 import { readFile, unlink, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join } from 'path';
@@ -122,7 +122,7 @@ describe('Logger', () => {
     });
 
     it('should include all log levels in JSON format', () => {
-      const logger = new Logger({ logFormat: 'json' });
+      const logger = new Logger({ logFormat: 'json', verbose: true });
       const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
 
       const levels = ['info', 'success', 'warn', 'error', 'debug'] as const;

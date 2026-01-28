@@ -73,11 +73,12 @@ export class ContextLoader {
       return undefined;
     }
 
-    // Extract Status section
-    const statusSection = this.extractSection(content, 'Status');
-    if (!statusSection.includes('BLOCKED')) {
+    // Extract Status section (heading is "## Status: BLOCKED", not "## Status\n")
+    const statusMatch = content.match(/## Status:\s*BLOCKED\n([\s\S]*?)(?=\n## [^#]|$)/i);
+    if (!statusMatch) {
       return undefined;
     }
+    const statusSection = statusMatch[1];
 
     // Extract Execution Log
     const executionLogMatch = statusSection.match(/### Execution Log\n([\s\S]*?)(?=\n### |$)/i);

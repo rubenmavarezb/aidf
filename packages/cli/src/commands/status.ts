@@ -3,7 +3,7 @@
 import { Command } from 'commander';
 import { readdir, readFile, stat } from 'fs/promises';
 import { join } from 'path';
-import { simpleGit, SimpleGit } from 'simple-git';
+import { simpleGit } from 'simple-git';
 import chalk from 'chalk';
 import { Logger } from '../utils/logger.js';
 import { ContextLoader } from '../core/context-loader.js';
@@ -144,7 +144,6 @@ export async function getLastExecution(projectRoot: string): Promise<LastExecuti
       return await getLastExecutionFromTasks(projectRoot);
     }
 
-    const hash = parts[0];
     const date = new Date(parts[1]);
     const message = parts[2];
 
@@ -310,7 +309,6 @@ export async function getProviderConfig(projectRoot: string): Promise<{ type: st
 
 async function loadConfig(projectRoot: string): Promise<AidfConfig> {
   const fs = await import('fs');
-  const path = await import('path');
   const yaml = await import('yaml');
 
   const possiblePaths = [

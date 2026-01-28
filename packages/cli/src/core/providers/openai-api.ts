@@ -49,7 +49,7 @@ export class OpenAiApiProvider implements Provider {
     try {
       const tools = this.convertToolsToOpenAIFormat(FILE_TOOLS);
 
-      let messages: OpenAI.ChatCompletionMessageParam[] = [
+      const messages: OpenAI.ChatCompletionMessageParam[] = [
         { role: 'user', content: prompt },
       ];
 

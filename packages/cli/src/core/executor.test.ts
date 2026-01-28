@@ -435,6 +435,18 @@ describe('Executor', () => {
   });
 
   describe('resume functionality', () => {
+    const resumeConfig: AidfConfig = {
+      ...mockConfig,
+      execution: {
+        ...mockConfig.execution,
+        max_iterations: 50,
+      },
+      permissions: {
+        ...mockConfig.permissions,
+        auto_commit: true,
+      },
+    };
+
     const blockedTaskContext: LoadedContext = {
       ...mockContext,
       task: {
@@ -449,14 +461,15 @@ describe('Executor', () => {
       },
     };
 
-    it('should throw error when resuming non-blocked task', async () => {
+    it('should fail when resuming non-blocked task', async () => {
       (loadContext as Mock).mockResolvedValue(mockContext);
 
       const executor = new Executor(mockConfig, { resume: true });
-      
-      await expect(executor.run('/test/task.md')).rejects.toThrow(
-        'Task is not blocked'
-      );
+      const result = await executor.run('/test/task.md');
+
+      expect(result.success).toBe(false);
+      expect(result.status).toBe('failed');
+      expect(result.error).toContain('Task is not blocked');
     });
 
     it('should start from previous iteration when resuming', async () => {
@@ -469,7 +482,7 @@ describe('Executor', () => {
         completionSignal: '<TASK_COMPLETE>',
       });
 
-      const executor = new Executor(mockConfig, { resume: true });
+      const executor = new Executor(resumeConfig, { resume: true });
       await executor.run('/test/task.md');
 
       const state = executor.getState();
@@ -488,11 +501,11 @@ describe('Executor', () => {
         completionSignal: '<TASK_COMPLETE>',
       });
 
-      const executor = new Executor(mockConfig, { resume: true, dryRun: true });
+      const executor = new Executor(resumeConfig, { resume: true, dryRun: true });
       await executor.run('/test/task.md');
 
       // Verify that buildIterationPrompt was called with blocking context
-      const { buildIterationPrompt } = await import('./providers/claude-cli.js');
+      await import('./providers/claude-cli.js');
       // Note: This is a simplified check - in a real test you'd spy on buildIterationPrompt
       expect(mockProvider.execute).not.toHaveBeenCalled(); // Dry run doesn't execute
     });
@@ -507,7 +520,7 @@ describe('Executor', () => {
         completionSignal: '<TASK_COMPLETE>',
       });
 
-      const executor = new Executor(mockConfig, { resume: true });
+      const executor = new Executor(resumeConfig, { resume: true });
       const result = await executor.run('/test/task.md');
 
       // Should include both previous and new files

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createStatusCommand } from './status.js';
-import type { StatusData, TaskStats } from '../types/index.js';
+import type { StatusData } from '../types/index.js';
 
 // Mock dependencies
 vi.mock('../core/context-loader.js', () => ({
@@ -39,11 +39,8 @@ vi.mock('../utils/logger.js', () => ({
 import { ContextLoader } from '../core/context-loader.js';
 import { readdir, readFile, stat } from 'fs/promises';
 import { simpleGit } from 'simple-git';
-import { Logger } from '../utils/logger.js';
-
 describe('status command', () => {
   const mockProjectRoot = '/test/project';
-  const mockTasksDir = `${mockProjectRoot}/.ai/tasks`;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -256,8 +253,7 @@ Test
       (ContextLoader.findAiDir as any).mockReturnValue(null);
       
       const cmd = createStatusCommand();
-      const logger = new Logger();
-      
+
       // Mock process.exit to prevent actual exit
       const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
         throw new Error('process.exit called');
@@ -265,7 +261,7 @@ Test
 
       try {
         await cmd.parseAsync(['status'], { from: 'user' });
-      } catch (error) {
+      } catch {
         expect(exitSpy).toHaveBeenCalledWith(1);
       }
 
