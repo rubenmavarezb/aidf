@@ -24,7 +24,7 @@
 | Task | Auto-Mode | Dependencias | Prioridad | Status |
 |------|-----------|--------------|-----------|--------|
 | 011-ci-cd-github-actions | ✅ SÍ | ninguna | Alta | ✅ Done |
-| 012-publish-npm | ⚠️ MANUAL | 011 | Alta | ⏳ |
+| 012-publish-npm | ⚠️ MANUAL | 011 | Alta | ✅ Done |
 | 013-improve-readme | ✅ SÍ | ninguna | Alta | ⏳ |
 | 014-more-templates | ✅ SÍ | ninguna | Media | ✅ Done |
 
@@ -114,7 +114,7 @@ Fase 3 (Features) - Independientes
 
 ### Fase 2: Polish & Release
 - [x] 011-ci-cd-github-actions (2026-01-28)
-- [ ] 012-publish-npm
+- [x] 012-publish-npm (2026-01-28)
 - [ ] 013-improve-readme
 - [x] 014-more-templates (2026-01-28)
 
