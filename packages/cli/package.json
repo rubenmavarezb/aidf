@@ -1,5 +1,5 @@
 {
-  "name": "aidf",
+  "name": "@aidf-cli/cli",
   "version": "0.1.0",
   "description": "AI-Integrated Development Framework CLI",
   "type": "module",
