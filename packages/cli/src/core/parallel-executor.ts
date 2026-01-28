@@ -7,7 +7,6 @@ import type {
   ParallelExecutionResult,
   ParallelTaskResult,
   TaskDependency,
-  ExecutorResult,
   ExecutorState,
   ParsedTask,
 } from '../types/index.js';

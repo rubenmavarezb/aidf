@@ -3,7 +3,6 @@ import { ParallelExecutor } from './parallel-executor.js';
 import type {
   ParallelExecutorOptions,
   ParsedTask,
-  LoadedContext,
 } from '../types/index.js';
 
 // Mock dependencies
@@ -348,10 +347,7 @@ describe('ParallelExecutor', () => {
 
   describe('file conflict detection', () => {
     it('should detect file conflicts between concurrent tasks', async () => {
-      let callCount = 0;
-
       (executeTask as Mock).mockImplementation(async (taskPath: string, options: any) => {
-        callCount++;
         // Simulate the first task reporting files modified
         if (options?.onIteration) {
           options.onIteration({
