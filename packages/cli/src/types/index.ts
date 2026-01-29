@@ -11,7 +11,7 @@ export interface AidfConfig {
 }
 
 export interface ProviderConfig {
-  type: 'claude-cli' | 'anthropic-api' | 'openai-api';
+  type: 'claude-cli' | 'cursor-cli' | 'anthropic-api' | 'openai-api';
   model?: string;
 }
 
@@ -214,6 +214,13 @@ export interface ExecutorState {
   tokenUsage?: { inputTokens: number; outputTokens: number };
 }
 
+export interface PhaseEvent {
+  phase: string;
+  iteration: number;
+  totalIterations: number;
+  filesModified: number;
+}
+
 export interface ExecutorOptions {
   maxIterations: number;
   maxConsecutiveFailures: number;
@@ -226,6 +233,8 @@ export interface ExecutorOptions {
   resume?: boolean;
   logger?: import('../utils/logger.js').Logger;
   onIteration?: (state: ExecutorState) => void;
+  onPhase?: (event: PhaseEvent) => void;
+  onOutput?: (chunk: string) => void;
   onAskUser?: (question: string, files: string[]) => Promise<boolean>;
 }
 

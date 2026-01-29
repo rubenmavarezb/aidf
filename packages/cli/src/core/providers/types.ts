@@ -20,6 +20,7 @@ export interface ProviderOptions {
   timeout?: number;
   maxTokens?: number;
   dangerouslySkipPermissions?: boolean;
+  onOutput?: (chunk: string) => void;
 }
 
 export interface Provider {

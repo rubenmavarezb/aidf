@@ -26,10 +26,10 @@ async function detectChangedFiles(cwd: string): Promise<string[]> {
 }
 
 /**
- * Provider that uses Claude Code CLI
+ * Provider that uses Cursor Agent CLI
  */
-export class ClaudeCliProvider implements Provider {
-  name = 'claude-cli';
+export class CursorCliProvider implements Provider {
+  name = 'cursor-cli';
   private cwd: string;
 
   constructor(cwd: string = process.cwd()) {
@@ -37,11 +37,11 @@ export class ClaudeCliProvider implements Provider {
   }
 
   /**
-   * Check if claude CLI is available
+   * Check if agent CLI is available
    */
   async isAvailable(): Promise<boolean> {
     return new Promise((resolve) => {
-      const proc = spawn('claude', ['--version'], { shell: true });
+      const proc = spawn('agent', ['--version'], { shell: true });
 
       proc.on('close', (code) => {
         resolve(code === 0);
@@ -54,12 +54,11 @@ export class ClaudeCliProvider implements Provider {
   }
 
   /**
-   * Execute a prompt with Claude CLI
+   * Execute a prompt with Cursor Agent CLI
    */
   async execute(prompt: string, options: ProviderOptions = {}): Promise<ExecutionResult> {
     const {
       timeout = 600000,
-      dangerouslySkipPermissions = false,
     } = options;
 
     const filesBefore = await detectChangedFiles(this.cwd);
@@ -67,11 +66,7 @@ export class ClaudeCliProvider implements Provider {
     return new Promise((resolve) => {
       const args: string[] = ['--print'];
 
-      if (dangerouslySkipPermissions) {
-        args.push('--dangerously-skip-permissions');
-      }
-
-      const proc = spawn('claude', args, {
+      const proc = spawn('agent', args, {
         cwd: this.cwd,
         shell: true,
         stdio: ['pipe', 'pipe', 'pipe'],
@@ -130,7 +125,7 @@ export class ClaudeCliProvider implements Provider {
         resolve({
           success: false,
           output: '',
-          error: `Failed to execute claude: ${error.message}`,
+          error: `Failed to execute agent: ${error.message}`,
           filesChanged: [],
           iterationComplete: false,
         });
@@ -163,86 +158,6 @@ export class ClaudeCliProvider implements Provider {
 /**
  * Factory function
  */
-export function createClaudeCliProvider(cwd?: string): Provider {
-  return new ClaudeCliProvider(cwd);
-}
-
-/**
- * Build the complete prompt for an iteration
- */
-export function buildIterationPrompt(context: {
-  agents: string;
-  role: string;
-  task: string;
-  plan?: string;
-  previousOutput?: string;
-  iteration: number;
-  blockingContext?: {
-    previousIteration: number;
-    blockingIssue: string;
-    filesModified: string[];
-  };
-}): string {
-  let prompt = '';
-
-  prompt += `# AIDF Autonomous Execution - Iteration ${context.iteration}\n\n`;
-  
-  if (context.blockingContext) {
-    prompt += `## Resuming Blocked Task\n\n`;
-    prompt += `This task was previously blocked at iteration ${context.blockingContext.previousIteration}.\n\n`;
-    prompt += `### Previous Blocking Issue\n\n`;
-    prompt += context.blockingContext.blockingIssue;
-    prompt += '\n\n';
-    prompt += `### Files Modified in Previous Attempt\n\n`;
-    if (context.blockingContext.filesModified.length > 0) {
-      context.blockingContext.filesModified.forEach(file => {
-        prompt += `- \`${file}\`\n`;
-      });
-    } else {
-      prompt += '_None_\n';
-    }
-    prompt += '\n';
-    prompt += `**IMPORTANT**: Review the blocking issue above. The problem has been addressed or guidance provided. Continue from where it left off.\n\n`;
-    prompt += `---\n\n`;
-  }
-
-  prompt += `You are executing a task autonomously. Follow the context below.\n\n`;
-
-  prompt += `## Project Context (AGENTS.md)\n\n`;
-  prompt += context.agents;
-  prompt += '\n\n';
-
-  prompt += `## Your Role\n\n`;
-  prompt += context.role;
-  prompt += '\n\n';
-
-  prompt += `## Current Task\n\n`;
-  prompt += context.task;
-  prompt += '\n\n';
-
-  if (context.plan) {
-    prompt += `## Implementation Plan\n\n`;
-    prompt += context.plan;
-    prompt += '\n\n';
-  }
-
-  if (context.previousOutput) {
-    prompt += `## Previous Iteration Output\n\n`;
-    prompt += '```\n';
-    prompt += context.previousOutput.slice(-2000);
-    prompt += '\n```\n\n';
-  }
-
-  prompt += `## Execution Instructions\n\n`;
-  prompt += `1. Read the task requirements carefully\n`;
-  prompt += `2. Check the Definition of Done criteria\n`;
-  prompt += `3. Make necessary code changes\n`;
-  prompt += `4. Stay within the allowed scope\n`;
-  prompt += `5. When ALL Definition of Done criteria are met, output: <TASK_COMPLETE>\n`;
-  prompt += `6. If you encounter a blocker, output: <BLOCKED: reason>\n\n`;
-
-  prompt += `**IMPORTANT:** Only modify files within the allowed scope. `;
-  prompt += `Do NOT modify files in the forbidden scope.\n`;
-
-  return prompt;
+export function createCursorCliProvider(cwd?: string): Provider {
+  return new CursorCliProvider(cwd);
 }

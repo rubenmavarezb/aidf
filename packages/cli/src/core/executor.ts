@@ -164,11 +164,14 @@ export class Executor {
           break;
         }
 
+        this.emitPhase('Executing AI');
+
         // For claude-cli, always skip its built-in permissions since we have our own ScopeGuard
         // For API providers, this flag is ignored anyway
         const result = await this.provider.execute(prompt, {
           timeout: this.options.timeoutPerIteration * 1000,
           dangerouslySkipPermissions: true,
+          onOutput: this.options.onOutput,
         });
 
         // Accumulate token usage from this iteration
@@ -179,6 +182,8 @@ export class Executor {
           this.state.tokenUsage.inputTokens += result.tokenUsage.inputTokens;
           this.state.tokenUsage.outputTokens += result.tokenUsage.outputTokens;
         }
+
+        this.emitPhase('Checking scope');
 
         // Verificar scope violations
         if (result.filesChanged.length > 0) {
@@ -210,6 +215,8 @@ export class Executor {
           }
         }
 
+        this.emitPhase('Validating');
+
         // Validar cambios
         const validation = await validator.preCommit();
         this.state.validationResults.push(validation);
@@ -222,6 +229,7 @@ export class Executor {
 
         // Commit si autoCommit está habilitado
         if (this.options.autoCommit && result.filesChanged.length > 0) {
+          this.emitPhase('Committing');
           await this.commitChanges(result.filesChanged, context.task.goal);
           this.state.filesModified.push(...result.filesChanged);
         }
@@ -277,7 +285,13 @@ export class Executor {
       ) {
         this.state.status = 'blocked';
         this.state.lastError = `Max iterations (${this.options.maxIterations}) reached`;
-        
+
+        try {
+          await this.updateTaskWithBlockedStatus(taskPath, this.state.lastError);
+        } catch {
+          // Ignore errors when updating task file
+        }
+
         // Si estaba resumiendo, actualizar historial
         if (this.options.resume && blockedStatus) {
           try {
@@ -295,6 +309,12 @@ export class Executor {
       ) {
         this.state.status = 'blocked';
         this.state.lastError = `Max consecutive failures (${this.options.maxConsecutiveFailures}) reached`;
+
+        try {
+          await this.updateTaskWithBlockedStatus(taskPath, this.state.lastError);
+        } catch {
+          // Ignore errors when updating task file
+        }
 
         // Si estaba resumiendo, actualizar historial
         if (this.options.resume && blockedStatus) {
@@ -374,6 +394,15 @@ export class Executor {
   }
 
   // --- Helpers privados ---
+
+  private emitPhase(phase: string): void {
+    this.options.onPhase?.({
+      phase,
+      iteration: this.state.iteration,
+      totalIterations: this.options.maxIterations,
+      filesModified: this.state.filesModified.length,
+    });
+  }
 
   private log(message: string): void {
     if (this.options.verbose) {
