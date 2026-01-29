@@ -7,24 +7,23 @@ export interface PhaseEvent {
   filesModified: number;
 }
 
-const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+const HEARTBEAT_INTERVAL = 15_000; // 15 seconds
 
 /**
- * Live status indicator that shows a spinning status line during execution.
- * Handles interleaving with AI output by clearing/redrawing around chunks.
+ * Live status indicator that prints periodic heartbeat lines during execution.
+ * Heartbeats are non-destructive — they print as regular log lines between
+ * AI output, so they never conflict with streaming stdout.
  */
 export class LiveStatus {
-  private timer: ReturnType<typeof setInterval> | null = null;
-  private frameIndex = 0;
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private phase = '';
   private iteration = 0;
   private totalIterations: number;
   private filesModified = 0;
   private startTime: number;
   private quiet: boolean;
-  private lastLineLength = 0;
   private active = false;
-  private hasOutputSinceRender = false;
+  private lastOutputTime = 0;
 
   constructor(totalIterations: number, quiet: boolean = false) {
     this.totalIterations = totalIterations;
@@ -36,35 +35,34 @@ export class LiveStatus {
    * Start the live status indicator
    */
   start(): void {
-    if (this.quiet || !process.stdout.isTTY) return;
+    if (this.quiet) return;
     this.active = true;
-    this.timer = setInterval(() => this.render(), 80);
+    this.heartbeatTimer = setInterval(() => this.heartbeat(), HEARTBEAT_INTERVAL);
   }
 
   /**
    * Update the current phase displayed
    */
   setPhase(event: PhaseEvent): void {
+    const previousPhase = this.phase;
     this.phase = event.phase;
     this.iteration = event.iteration;
     this.totalIterations = event.totalIterations;
     this.filesModified = event.filesModified;
-    if (this.active) this.render();
+
+    // Print phase transition (but not the first "Executing AI" — that's obvious)
+    if (this.active && previousPhase && previousPhase !== event.phase) {
+      this.printStatus('phase');
+    }
   }
 
   /**
    * Handle output from the AI provider.
-   * Clears the status line, writes the output, marks for redraw.
+   * Just passes through — no terminal manipulation needed.
    */
   handleOutput(chunk: string): void {
-    if (!this.active || !process.stdout.isTTY) {
-      process.stdout.write(chunk);
-      return;
-    }
-
-    this.clearLine();
     process.stdout.write(chunk);
-    this.hasOutputSinceRender = true;
+    this.lastOutputTime = Date.now();
   }
 
   /**
@@ -72,15 +70,8 @@ export class LiveStatus {
    */
   phaseComplete(message: string): void {
     if (this.quiet) return;
-    if (!process.stdout.isTTY) {
-      console.log(message);
-      return;
-    }
-
-    this.clearLine();
     const elapsed = this.formatElapsed();
     console.log(`${chalk.green('✓')} ${message} ${chalk.gray(`⏱ ${elapsed}`)}`);
-    this.lastLineLength = 0;
   }
 
   /**
@@ -88,64 +79,47 @@ export class LiveStatus {
    */
   phaseFailed(message: string): void {
     if (this.quiet) return;
-    if (!process.stdout.isTTY) {
-      console.log(message);
-      return;
-    }
-
-    this.clearLine();
     const elapsed = this.formatElapsed();
     console.log(`${chalk.red('✗')} ${message} ${chalk.gray(`⏱ ${elapsed}`)}`);
-    this.lastLineLength = 0;
   }
 
   /**
    * Stop the live status entirely
    */
   complete(): void {
-    if (this.timer) {
-      clearInterval(this.timer);
-      this.timer = null;
-    }
-    if (this.active) {
-      this.clearLine();
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
     }
     this.active = false;
   }
 
-  private render(): void {
-    if (!process.stdout.isTTY || this.quiet || !this.active) return;
+  /**
+   * Periodic heartbeat — prints a status line if no AI output was received recently
+   */
+  private heartbeat(): void {
+    if (this.quiet || !this.active) return;
 
-    // If there was output since last render, ensure we're on a new line
-    if (this.hasOutputSinceRender) {
-      this.hasOutputSinceRender = false;
-      this.lastLineLength = 0;
-    }
+    // Only print heartbeat if no AI output in the last 5 seconds
+    // (avoids cluttering when the AI is actively streaming)
+    const silentMs = Date.now() - this.lastOutputTime;
+    if (this.lastOutputTime > 0 && silentMs < 5000) return;
 
-    this.frameIndex = (this.frameIndex + 1) % SPINNER_FRAMES.length;
-
-    const spinner = chalk.cyan(SPINNER_FRAMES[this.frameIndex]);
-    const elapsed = this.formatElapsed();
-    const iter = chalk.bold(`Iteration ${this.iteration}/${this.totalIterations}`);
-    const phase = this.phase ? chalk.yellow(this.phase) : '';
-    const files = chalk.gray(`${this.filesModified} file${this.filesModified !== 1 ? 's' : ''}`);
-    const time = chalk.gray(`⏱ ${elapsed}`);
-
-    const line = `${spinner} ${iter} · ${phase} · ${files} · ${time}`;
-
-    this.clearLine();
-    process.stdout.write(line);
-
-    // Store visible length (without ANSI codes) for clearing
-    this.lastLineLength = this.stripAnsi(line).length;
+    this.printStatus('heartbeat');
   }
 
-  private clearLine(): void {
-    if (process.stdout.isTTY && this.lastLineLength > 0) {
-      process.stdout.write('\r' + ' '.repeat(this.lastLineLength) + '\r');
-    } else if (process.stdout.isTTY) {
-      process.stdout.write('\r');
-    }
+  private printStatus(type: 'heartbeat' | 'phase'): void {
+    const elapsed = this.formatElapsed();
+    const iter = `Iteration ${this.iteration}/${this.totalIterations}`;
+    const phase = this.phase || 'Starting';
+    const files = `${this.filesModified} file${this.filesModified !== 1 ? 's' : ''}`;
+
+    const prefix = type === 'heartbeat'
+      ? chalk.gray('⋯')
+      : chalk.cyan('▸');
+
+    const line = `${prefix} ${chalk.gray(`${iter} · ${phase} · ${files} · ⏱ ${elapsed}`)}`;
+    console.log(line);
   }
 
   private formatElapsed(): string {
@@ -156,9 +130,5 @@ export class LiveStatus {
       return `${m}:${(s % 60).toString().padStart(2, '0')}`;
     }
     return `${s}s`;
-  }
-
-  private stripAnsi(str: string): string {
-    return str.replace(/\x1b\[[0-9;]*m/g, '');
   }
 }

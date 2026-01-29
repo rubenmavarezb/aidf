@@ -2,15 +2,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { LiveStatus } from './live-status.js';
 
 describe('LiveStatus', () => {
-  let originalIsTTY: boolean | undefined;
-
   beforeEach(() => {
-    originalIsTTY = process.stdout.isTTY;
     vi.useFakeTimers();
   });
 
   afterEach(() => {
-    Object.defineProperty(process.stdout, 'isTTY', { value: originalIsTTY, writable: true });
     vi.useRealTimers();
   });
 
@@ -28,51 +24,84 @@ describe('LiveStatus', () => {
 
   describe('start/complete', () => {
     it('should start and stop without errors', () => {
-      Object.defineProperty(process.stdout, 'isTTY', { value: true, writable: true });
       const status = new LiveStatus(50);
       status.start();
       status.complete();
     });
 
-    it('should not start in quiet mode', () => {
+    it('should not print heartbeat in quiet mode', () => {
       const status = new LiveStatus(50, true);
-      const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
       status.start();
-      vi.advanceTimersByTime(200);
+      vi.advanceTimersByTime(20000);
       status.complete();
-      // In quiet mode, should not write any spinner output
-      expect(writeSpy).not.toHaveBeenCalled();
-      writeSpy.mockRestore();
+      expect(logSpy).not.toHaveBeenCalled();
+      logSpy.mockRestore();
     });
 
-    it('should not start in non-TTY', () => {
-      Object.defineProperty(process.stdout, 'isTTY', { value: false, writable: true });
+    it('should print heartbeat after interval when no output received', () => {
       const status = new LiveStatus(50);
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      status.start();
+      status.setPhase({ phase: 'Executing AI', iteration: 1, totalIterations: 50, filesModified: 0 });
+      // Reset mock to ignore the phase transition log
+      logSpy.mockClear();
+
+      vi.advanceTimersByTime(15000);
+      expect(logSpy).toHaveBeenCalledTimes(1);
+      const call = logSpy.mock.calls[0][0] as string;
+      expect(call).toContain('Iteration 1/50');
+      expect(call).toContain('Executing AI');
+
+      status.complete();
+      logSpy.mockRestore();
+    });
+
+    it('should suppress heartbeat when AI output is streaming', () => {
+      const status = new LiveStatus(50);
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
       const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
       status.start();
-      vi.advanceTimersByTime(200);
+      status.setPhase({ phase: 'Executing AI', iteration: 1, totalIterations: 50, filesModified: 0 });
+      logSpy.mockClear();
+
+      // Simulate AI output at 13s — within 5s window of heartbeat at 15s
+      vi.advanceTimersByTime(13000);
+      status.handleOutput('some AI output');
+      vi.advanceTimersByTime(2000); // now at 15s
+
+      // Heartbeat should be suppressed (AI output was < 5s ago)
+      expect(logSpy).not.toHaveBeenCalled();
+
       status.complete();
-      expect(writeSpy).not.toHaveBeenCalled();
+      logSpy.mockRestore();
       writeSpy.mockRestore();
     });
   });
 
   describe('setPhase', () => {
-    it('should accept phase events', () => {
+    it('should print on phase transition', () => {
       const status = new LiveStatus(50);
-      // Should not throw
-      status.setPhase({
-        phase: 'Executing AI',
-        iteration: 3,
-        totalIterations: 50,
-        filesModified: 2,
-      });
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      status.start();
+
+      // First phase — no previous phase, so no print
+      status.setPhase({ phase: 'Executing AI', iteration: 1, totalIterations: 50, filesModified: 0 });
+      expect(logSpy).not.toHaveBeenCalled();
+
+      // Phase transition — should print
+      status.setPhase({ phase: 'Checking scope', iteration: 1, totalIterations: 50, filesModified: 2 });
+      expect(logSpy).toHaveBeenCalledTimes(1);
+      const call = logSpy.mock.calls[0][0] as string;
+      expect(call).toContain('Checking scope');
+
+      status.complete();
+      logSpy.mockRestore();
     });
   });
 
   describe('handleOutput', () => {
-    it('should write output to stdout in non-TTY mode', () => {
-      Object.defineProperty(process.stdout, 'isTTY', { value: false, writable: true });
+    it('should write output to stdout', () => {
       const status = new LiveStatus(50);
       const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
       status.handleOutput('hello world');
@@ -82,12 +111,13 @@ describe('LiveStatus', () => {
   });
 
   describe('phaseComplete', () => {
-    it('should log completion message in non-TTY', () => {
-      Object.defineProperty(process.stdout, 'isTTY', { value: false, writable: true });
+    it('should log completion message', () => {
       const status = new LiveStatus(50);
       const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-      status.phaseComplete('Iteration 1 complete');
-      expect(logSpy).toHaveBeenCalledWith('Iteration 1 complete');
+      status.phaseComplete('Iteration 1 complete · 2 files');
+      expect(logSpy).toHaveBeenCalledTimes(1);
+      const call = logSpy.mock.calls[0][0] as string;
+      expect(call).toContain('Iteration 1 complete');
       logSpy.mockRestore();
     });
 
@@ -101,12 +131,13 @@ describe('LiveStatus', () => {
   });
 
   describe('phaseFailed', () => {
-    it('should log failure message in non-TTY', () => {
-      Object.defineProperty(process.stdout, 'isTTY', { value: false, writable: true });
+    it('should log failure message', () => {
       const status = new LiveStatus(50);
       const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
       status.phaseFailed('Validation failed');
-      expect(logSpy).toHaveBeenCalledWith('Validation failed');
+      expect(logSpy).toHaveBeenCalledTimes(1);
+      const call = logSpy.mock.calls[0][0] as string;
+      expect(call).toContain('Validation failed');
       logSpy.mockRestore();
     });
   });
