@@ -19,6 +19,7 @@ templates/.ai/        # Template folder distributed with the CLI
   ├── AGENTS.template.md
   ├── ROLES.md
   ├── roles/          # 5 built-in roles (architect, developer, tester, reviewer, documenter)
+  ├── skills/         # 6 built-in skills (SKILL.md per agentskills.io standard)
   ├── templates/      # Task and plan templates (6 task types)
   ├── tasks/
   └── plans/
@@ -28,11 +29,12 @@ packages/
       ├── src/
       │   ├── index.ts           # CLI entry point (Commander)
       │   ├── types/index.ts     # All TypeScript interfaces
-      │   ├── commands/          # init, run, task, status, watch, hooks
+      │   ├── commands/          # init, run, task, status, watch, hooks, skills
       │   ├── core/
       │   │   ├── executor.ts          # Main execution loop
       │   │   ├── parallel-executor.ts # Multi-task parallel execution
       │   │   ├── context-loader.ts    # Loads .ai/ folder context
+      │   │   ├── skill-loader.ts       # Agent Skills discovery, parsing, XML generation
       │   │   ├── safety.ts            # ScopeGuard (allowed/forbidden paths)
       │   │   ├── validator.ts         # Runs validation commands
       │   │   ├── watcher.ts           # File change monitoring
@@ -60,7 +62,7 @@ packages/
 ```bash
 pnpm install           # Install all dependencies (run from repo root)
 pnpm build             # Build all packages (tsup compiles CLI to dist/)
-pnpm test              # Run all tests (Vitest, 17 test files, 263+ tests)
+pnpm test              # Run all tests (Vitest, 19 test files, 298+ tests)
 pnpm lint              # ESLint across all packages
 pnpm dev               # Watch mode for CLI development
 ```
@@ -76,17 +78,18 @@ npm run lint           # eslint src
 
 ## Architecture
 
-### 4 Layers of Context
+### 5 Layers of Context
 
 1. **AGENTS.md** — Single source of truth (project overview, architecture, conventions, boundaries)
 2. **Roles** — Specialized AI personas with defined expertise and constraints
-3. **Tasks** — Scoped, executable prompts with goal, allowed/forbidden paths, and Definition of Done
-4. **Plans** — Multi-task initiatives grouping related work
+3. **Skills** — Portable, composable capabilities following the [agentskills.io](https://agentskills.io) standard
+4. **Tasks** — Scoped, executable prompts with goal, allowed/forbidden paths, and Definition of Done
+5. **Plans** — Multi-task initiatives grouping related work
 
 ### Execution Flow
 
 ```
-aidf run → load context (AGENTS.md + role + task) → build prompt → provider.execute() →
+aidf run → load context (AGENTS.md + role + task + skills) → build prompt → provider.execute() →
   → check scope (ScopeGuard) → validate (lint/typecheck/test) → commit → repeat until done
 ```
 
@@ -114,12 +117,15 @@ Provider factory is in `providers/index.ts` — `createProvider(type, cwd, apiKe
 
 ### Key Types (types/index.ts)
 
-- `AidfConfig` — Full config.yml structure (provider, execution, permissions, validation, git, notifications)
+- `AidfConfig` — Full config.yml structure (provider, execution, permissions, validation, git, notifications, skills)
 - `ProviderConfig` — `{ type: 'claude-cli' | 'cursor-cli' | 'anthropic-api' | 'openai-api', model? }`
 - `ExecutorOptions` — Max iterations, failures, timeout, scope mode, callbacks (`onIteration`, `onPhase`, `onOutput`, `onAskUser`)
 - `ExecutorResult` — Success/failure, iterations, files modified, token usage, blocked reason
 - `ParsedTask` — Goal, type, scope (allowed/forbidden), requirements, Definition of Done, blocked status
 - `PhaseEvent` — Live status updates (phase, iteration, totalIterations, filesModified)
+- `SkillMetadata` — Skill frontmatter (name, description, version, author, tags, globs)
+- `LoadedSkill` — Discovered skill with parsed metadata and raw content
+- `SkillsConfig` — Skills configuration (enabled, extra directories)
 
 ### Live Status (utils/live-status.ts)
 
@@ -135,6 +141,7 @@ The `onOutput` callback on providers allows the live status to clear/redraw arou
 ## Key Patterns
 
 - **Provider interface**: All providers implement `{ name, execute(prompt, options), isAvailable() }` from `providers/types.ts`
+- **Skills**: `SkillLoader` in `skill-loader.ts` discovers and loads SKILL.md files from project, global, and config directories
 - **Scope enforcement**: `ScopeGuard` in `safety.ts` validates file changes against task scope
 - **Status updates**: Executor writes `## Status: COMPLETED/BLOCKED/FAILED` sections back to task .md files with execution logs
 - **Notifications**: `NotificationService` dispatches to desktop/Slack/Discord/email based on config
@@ -163,6 +170,9 @@ git:
   branch_prefix: "aidf/"
 notifications:
   level: all  # all | errors | blocked
+skills:
+  enabled: true          # default: true
+  directories: []        # extra directories to scan for skills
 ```
 
 ## Testing
@@ -183,5 +193,6 @@ notifications:
 
 - Templates use `.template.md` suffix
 - Role files define: Identity, Expertise, Responsibilities, Constraints, Quality Criteria
+- Skill files (SKILL.md): Frontmatter (name, description, version, tags) + markdown instructions (agentskills.io standard)
 - Task files define: Goal, Type, Scope (allowed/forbidden), Requirements, Definition of Done
 - `examples/` contains fully configured AGENTS.md for different project types (Next.js, Node API, React lib)
