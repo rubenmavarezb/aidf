@@ -10,7 +10,6 @@ import { executeTask } from '../core/executor.js';
 import { ParallelExecutor } from '../core/parallel-executor.js';
 import { ContextLoader } from '../core/context-loader.js';
 import { Logger } from '../utils/logger.js';
-import { ProgressBar } from '../utils/progress-bar.js';
 import { LiveStatus } from '../utils/live-status.js';
 import type { ExecutorResult, ExecutorState, PhaseEvent } from '../types/index.js';
 
