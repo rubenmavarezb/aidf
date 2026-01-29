@@ -47,7 +47,7 @@ export class ContextLoader {
       throw new Error(`Task file not found: ${taskPath}`);
     }
 
-    const content = await readFile(taskPath, 'utf-8');
+    const content = (await readFile(taskPath, 'utf-8')).replace(/\r\n/g, '\n');
     const blockedStatus = this.parseBlockedStatus(content);
 
     return {
@@ -157,7 +157,7 @@ export class ContextLoader {
       throw new Error(`Role file not found: ${rolePath}. Available roles are in ${join(this.aiDir, 'roles')}`);
     }
 
-    const content = await readFile(rolePath, 'utf-8');
+    const content = (await readFile(rolePath, 'utf-8')).replace(/\r\n/g, '\n');
 
     return {
       name: roleName,
@@ -181,7 +181,7 @@ export class ContextLoader {
       throw new Error(`AGENTS.md not found at ${agentsPath}. Run \`aidf init\` first.`);
     }
 
-    const content = await readFile(agentsPath, 'utf-8');
+    const content = (await readFile(agentsPath, 'utf-8')).replace(/\r\n/g, '\n');
 
     return {
       projectOverview: this.extractSection(content, 'Project Overview'),
@@ -205,7 +205,8 @@ export class ContextLoader {
   async loadPlanIfExists(): Promise<string | undefined> {
     const planPath = join(this.aiDir, 'IMPLEMENTATION_PLAN.md');
     if (existsSync(planPath)) {
-      return readFile(planPath, 'utf-8');
+      const content = await readFile(planPath, 'utf-8');
+      return content.replace(/\r\n/g, '\n');
     }
     return undefined;
   }
