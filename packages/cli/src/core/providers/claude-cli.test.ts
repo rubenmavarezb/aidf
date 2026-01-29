@@ -49,20 +49,30 @@ describe('ClaudeCliProvider', () => {
   describe('execute', () => {
     it('should include --dangerously-skip-permissions when option is true', async () => {
       // Execute with dangerouslySkipPermissions: true
-      provider.execute('test prompt', { dangerouslySkipPermissions: true });
+      // Don't await — we just need to wait for detectChangedFiles to resolve
+      // so the claude spawn is called
+      const executePromise = provider.execute('test prompt', { dangerouslySkipPermissions: true });
+
+      // Wait for detectChangedFiles mock (setTimeout 10ms) to resolve,
+      // which triggers the claude spawn
+      await new Promise(resolve => setTimeout(resolve, 20));
 
       // spawn is called twice: once for git status (detectChangedFiles), once for claude
-      // The second call should be the claude execution
       const spawnMock = spawn as unknown as ReturnType<typeof vi.fn>;
       const claudeCall = spawnMock.mock.calls.find(
         (call: unknown[]) => call[0] === 'claude'
       );
       expect(claudeCall).toBeDefined();
       expect(claudeCall![1]).toContain('--dangerously-skip-permissions');
+
+      // Let the execute promise settle to avoid unhandled rejections
+      await executePromise;
     });
 
     it('should not include --dangerously-skip-permissions when option is false', async () => {
-      provider.execute('test prompt', { dangerouslySkipPermissions: false });
+      const executePromise = provider.execute('test prompt', { dangerouslySkipPermissions: false });
+
+      await new Promise(resolve => setTimeout(resolve, 20));
 
       const spawnMock = spawn as unknown as ReturnType<typeof vi.fn>;
       const claudeCall = spawnMock.mock.calls.find(
@@ -70,10 +80,14 @@ describe('ClaudeCliProvider', () => {
       );
       expect(claudeCall).toBeDefined();
       expect(claudeCall![1]).not.toContain('--dangerously-skip-permissions');
+
+      await executePromise;
     });
 
     it('should not include --dangerously-skip-permissions by default', async () => {
-      provider.execute('test prompt');
+      const executePromise = provider.execute('test prompt');
+
+      await new Promise(resolve => setTimeout(resolve, 20));
 
       const spawnMock = spawn as unknown as ReturnType<typeof vi.fn>;
       const claudeCall = spawnMock.mock.calls.find(
@@ -81,6 +95,8 @@ describe('ClaudeCliProvider', () => {
       );
       expect(claudeCall).toBeDefined();
       expect(claudeCall![1]).not.toContain('--dangerously-skip-permissions');
+
+      await executePromise;
     });
   });
 
