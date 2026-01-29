@@ -9,6 +9,7 @@ export interface AidfConfig {
   git: GitConfig;
   notifications?: NotificationsConfig;
   skills?: SkillsConfig;
+  security?: SecurityConfig;
 }
 
 export interface ProviderConfig {
@@ -409,4 +410,13 @@ export interface SkillsConfig {
   enabled?: boolean;
   directories?: string[];
   extras?: string[];
+}
+
+// === Security Types ===
+
+export interface SecurityConfig {
+  /** Whether to skip Claude CLI permission prompts. Default: true for backward compat */
+  skip_permissions?: boolean;
+  /** Show a warning when skip_permissions is true. Default: true */
+  warn_on_skip?: boolean;
 }

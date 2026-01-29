@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ClaudeCliProvider, buildIterationPrompt } from './claude-cli.js';
+import { spawn } from 'child_process';
 
 // Mock child_process for tests without real Claude CLI
 vi.mock('child_process', () => ({
@@ -42,6 +43,60 @@ describe('ClaudeCliProvider', () => {
     it('should use provided cwd', () => {
       const customProvider = new ClaudeCliProvider('/custom/path');
       expect(customProvider.name).toBe('claude-cli');
+    });
+  });
+
+  describe('execute', () => {
+    it('should include --dangerously-skip-permissions when option is true', async () => {
+      // Execute with dangerouslySkipPermissions: true
+      // Don't await — we just need to wait for detectChangedFiles to resolve
+      // so the claude spawn is called
+      const executePromise = provider.execute('test prompt', { dangerouslySkipPermissions: true });
+
+      // Wait for detectChangedFiles mock (setTimeout 10ms) to resolve,
+      // which triggers the claude spawn
+      await new Promise(resolve => setTimeout(resolve, 20));
+
+      // spawn is called twice: once for git status (detectChangedFiles), once for claude
+      const spawnMock = spawn as unknown as ReturnType<typeof vi.fn>;
+      const claudeCall = spawnMock.mock.calls.find(
+        (call: unknown[]) => call[0] === 'claude'
+      );
+      expect(claudeCall).toBeDefined();
+      expect(claudeCall![1]).toContain('--dangerously-skip-permissions');
+
+      // Let the execute promise settle to avoid unhandled rejections
+      await executePromise;
+    });
+
+    it('should not include --dangerously-skip-permissions when option is false', async () => {
+      const executePromise = provider.execute('test prompt', { dangerouslySkipPermissions: false });
+
+      await new Promise(resolve => setTimeout(resolve, 20));
+
+      const spawnMock = spawn as unknown as ReturnType<typeof vi.fn>;
+      const claudeCall = spawnMock.mock.calls.find(
+        (call: unknown[]) => call[0] === 'claude'
+      );
+      expect(claudeCall).toBeDefined();
+      expect(claudeCall![1]).not.toContain('--dangerously-skip-permissions');
+
+      await executePromise;
+    });
+
+    it('should not include --dangerously-skip-permissions by default', async () => {
+      const executePromise = provider.execute('test prompt');
+
+      await new Promise(resolve => setTimeout(resolve, 20));
+
+      const spawnMock = spawn as unknown as ReturnType<typeof vi.fn>;
+      const claudeCall = spawnMock.mock.calls.find(
+        (call: unknown[]) => call[0] === 'claude'
+      );
+      expect(claudeCall).toBeDefined();
+      expect(claudeCall![1]).not.toContain('--dangerously-skip-permissions');
+
+      await executePromise;
     });
   });
 

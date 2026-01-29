@@ -529,6 +529,166 @@ describe('Executor', () => {
       expect(result.filesModified).toContain('src/config/settings.ts');
     });
   });
+
+  describe('security config', () => {
+    it('should pass dangerouslySkipPermissions: true by default (no security config)', async () => {
+      mockProvider.execute.mockResolvedValue({
+        success: true,
+        output: 'Done',
+        filesChanged: [],
+        iterationComplete: true,
+        completionSignal: '<TASK_COMPLETE>',
+      });
+
+      const executor = new Executor(mockConfig);
+      await executor.run('/test/task.md');
+
+      expect(mockProvider.execute).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ dangerouslySkipPermissions: true })
+      );
+    });
+
+    it('should pass dangerouslySkipPermissions: true when skip_permissions is true', async () => {
+      mockProvider.execute.mockResolvedValue({
+        success: true,
+        output: 'Done',
+        filesChanged: [],
+        iterationComplete: true,
+        completionSignal: '<TASK_COMPLETE>',
+      });
+
+      const executor = new Executor({
+        ...mockConfig,
+        security: { skip_permissions: true },
+      });
+      await executor.run('/test/task.md');
+
+      expect(mockProvider.execute).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ dangerouslySkipPermissions: true })
+      );
+    });
+
+    it('should pass dangerouslySkipPermissions: false when skip_permissions is false', async () => {
+      mockProvider.execute.mockResolvedValue({
+        success: true,
+        output: 'Done',
+        filesChanged: [],
+        iterationComplete: true,
+        completionSignal: '<TASK_COMPLETE>',
+      });
+
+      const executor = new Executor({
+        ...mockConfig,
+        security: { skip_permissions: false },
+      });
+      await executor.run('/test/task.md');
+
+      expect(mockProvider.execute).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ dangerouslySkipPermissions: false })
+      );
+    });
+
+    it('should emit warning when skip_permissions is true and warn_on_skip is true', async () => {
+      mockProvider.execute.mockResolvedValue({
+        success: true,
+        output: 'Done',
+        filesChanged: [],
+        iterationComplete: true,
+        completionSignal: '<TASK_COMPLETE>',
+      });
+
+      const executor = new Executor({
+        ...mockConfig,
+        security: { skip_permissions: true, warn_on_skip: true },
+      });
+      // Spy on the logger's warn method
+      const loggerSpy = vi.spyOn(
+        (executor as unknown as { logger: { warn: (msg: string) => void } }).logger,
+        'warn'
+      );
+
+      await executor.run('/test/task.md');
+
+      expect(loggerSpy).toHaveBeenCalledWith(
+        expect.stringContaining('--dangerously-skip-permissions')
+      );
+    });
+
+    it('should emit warning by default (no security config)', async () => {
+      mockProvider.execute.mockResolvedValue({
+        success: true,
+        output: 'Done',
+        filesChanged: [],
+        iterationComplete: true,
+        completionSignal: '<TASK_COMPLETE>',
+      });
+
+      const executor = new Executor(mockConfig);
+      const loggerSpy = vi.spyOn(
+        (executor as unknown as { logger: { warn: (msg: string) => void } }).logger,
+        'warn'
+      );
+
+      await executor.run('/test/task.md');
+
+      expect(loggerSpy).toHaveBeenCalledWith(
+        expect.stringContaining('--dangerously-skip-permissions')
+      );
+    });
+
+    it('should not emit warning when warn_on_skip is false', async () => {
+      mockProvider.execute.mockResolvedValue({
+        success: true,
+        output: 'Done',
+        filesChanged: [],
+        iterationComplete: true,
+        completionSignal: '<TASK_COMPLETE>',
+      });
+
+      const executor = new Executor({
+        ...mockConfig,
+        security: { skip_permissions: true, warn_on_skip: false },
+      });
+      const loggerSpy = vi.spyOn(
+        (executor as unknown as { logger: { warn: (msg: string) => void } }).logger,
+        'warn'
+      );
+
+      await executor.run('/test/task.md');
+
+      expect(loggerSpy).not.toHaveBeenCalledWith(
+        expect.stringContaining('--dangerously-skip-permissions')
+      );
+    });
+
+    it('should not emit warning when skip_permissions is false', async () => {
+      mockProvider.execute.mockResolvedValue({
+        success: true,
+        output: 'Done',
+        filesChanged: [],
+        iterationComplete: true,
+        completionSignal: '<TASK_COMPLETE>',
+      });
+
+      const executor = new Executor({
+        ...mockConfig,
+        security: { skip_permissions: false, warn_on_skip: true },
+      });
+      const loggerSpy = vi.spyOn(
+        (executor as unknown as { logger: { warn: (msg: string) => void } }).logger,
+        'warn'
+      );
+
+      await executor.run('/test/task.md');
+
+      expect(loggerSpy).not.toHaveBeenCalledWith(
+        expect.stringContaining('--dangerously-skip-permissions')
+      );
+    });
+  });
 });
 
 describe('executeTask', () => {

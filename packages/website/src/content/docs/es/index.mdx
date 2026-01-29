@@ -1,0 +1,51 @@
+---
+title: AIDF — AI-Integrated Development Framework
+description: Estructura tu contexto de IA. Automatiza tus tareas de desarrollo.
+template: splash
+hero:
+  tagline: Estructura tu contexto de IA. Automatiza tus tareas de desarrollo.
+  actions:
+    - text: Comenzar
+      link: /aidf/es/docs/concepts/
+      icon: right-arrow
+      variant: primary
+    - text: Ver en GitHub
+      link: https://github.com/rubenmavarezb/aidf
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+## ¿Por qué AIDF?
+
+Los asistentes de IA son poderosos pero ciegos al contexto. No conocen tu arquitectura, convenciones ni límites. AIDF soluciona eso.
+
+<CardGrid>
+  <Card title="Contexto Estructurado" icon="document">
+    Define la arquitectura, convenciones y límites de tu proyecto en un único archivo `AGENTS.md` que cualquier asistente de IA puede entender.
+  </Card>
+  <Card title="Ejecución Automatizada" icon="rocket">
+    Ejecuta tareas de forma autónoma con control de alcance, validación, auto-commit y seguimiento en tiempo real a través del CLI.
+  </Card>
+  <Card title="Seguridad Integrada" icon="approve-check-circle">
+    El control explícito de alcance previene cambios accidentales. Rutas prohibidas, rutas permitidas y criterios de Definición de Hecho mantienen a la IA enfocada.
+  </Card>
+  <Card title="Agnóstico de Herramientas" icon="puzzle">
+    Funciona con Claude Code, Cursor, GitHub Copilot o cualquier LLM. El valor está en el contexto estructurado, no en la herramienta.
+  </Card>
+</CardGrid>
+
+## Inicio Rápido
+
+```bash
+# Instalar el CLI
+npm install -g aidf
+
+# Inicializar AIDF en tu proyecto
+aidf init
+
+# Crear y ejecutar una tarea
+aidf task create "Add login form component"
+aidf run .ai/tasks/add-login-form.md
+```
