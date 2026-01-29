@@ -10,6 +10,7 @@ AIDF can notify you when tasks complete, fail, or get blocked. This is useful fo
 | **Slack** | Posts to an Incoming Webhook | Slack workspace + webhook URL |
 | **Discord** | Posts to a channel webhook | Discord server + webhook URL |
 | **Email** | Sends via SMTP | SMTP server credentials |
+| **Webhook** | POST JSON to any URL | Any HTTP endpoint (n8n, Zapier, custom) |
 
 ---
 
@@ -36,6 +37,11 @@ notifications:
     smtp_pass: "app-password"
     from: "you@gmail.com"
     to: "you@gmail.com"
+  webhook:
+    enabled: true
+    url: "https://your-n8n.com/webhook/aidf"
+    headers:                          # optional
+      Authorization: "Bearer token"
 ```
 
 You only need to enable the channels you want. All channels are disabled by default.
@@ -137,6 +143,47 @@ Other SMTP providers work the same way — just use their host and port.
 
 Emails are sent as HTML with a status table showing task name, iterations, files modified, and any error or blocked reason.
 
+### Webhook (Generic)
+
+Sends a clean JSON payload via HTTP POST to any URL. Works with n8n, Zapier, Make, or any custom endpoint.
+
+```yaml
+notifications:
+  level: all
+  webhook:
+    enabled: true
+    url: "https://your-n8n.com/webhook/aidf"
+```
+
+If your endpoint requires authentication, add custom headers:
+
+```yaml
+notifications:
+  level: all
+  webhook:
+    enabled: true
+    url: "https://your-n8n.com/webhook/aidf"
+    headers:
+      Authorization: "Bearer your-token"
+```
+
+The payload is a flat JSON object:
+
+```json
+{
+  "type": "completed",
+  "task": "001-add-login.md",
+  "taskPath": ".ai/tasks/001-add-login.md",
+  "iterations": 5,
+  "filesModified": 3,
+  "error": null,
+  "blockedReason": null,
+  "timestamp": "2026-01-29T12:00:00.000Z"
+}
+```
+
+This is the simplest channel to integrate with. No vendor-specific formatting — just raw data you can route however you want.
+
 ---
 
 ## When Notifications Fire
@@ -204,15 +251,33 @@ notifications:
     to: "dev@yourteam.com"
 ```
 
+## Example: n8n / Zapier via Generic Webhook
+
+```yaml
+notifications:
+  level: all
+  webhook:
+    enabled: true
+    url: "https://your-n8n.com/webhook/aidf-notifications"
+```
+
 ---
 
-## Future Channels
+## Zoom Chat via Generic Webhook
 
-### Zoom Chat
+Zoom Team Chat supports incoming webhooks via the [Incoming Webhook app](https://marketplace.zoom.us/apps/eH_dLuquRd-VYcOsNGy-hQ) on the Zoom Marketplace. You can use the generic webhook channel with a Bearer token header:
 
-Zoom Team Chat supports incoming webhooks via the [Incoming Webhook app](https://marketplace.zoom.us/apps/eH_dLuquRd-VYcOsNGy-hQ) on the Zoom Marketplace. Unlike Slack/Discord, Zoom requires a Bearer token for authentication in addition to the webhook URL. See [Zoom's Incoming Webhook Chatbot docs](https://support.zoom.com/hc/en/article?id=zm_kb&sysparm_article=KB0067640) for setup details.
+```yaml
+notifications:
+  level: all
+  webhook:
+    enabled: true
+    url: "https://integrations.zoom.us/chat/webhooks/incomingwebhook/your-endpoint"
+    headers:
+      Authorization: "Bearer your-zoom-token"
+```
 
-This channel is not yet implemented in AIDF but is planned for a future release.
+See [Zoom's Incoming Webhook Chatbot docs](https://support.zoom.com/hc/en/article?id=zm_kb&sysparm_article=KB0067640) for setup details.
 
 ---
 

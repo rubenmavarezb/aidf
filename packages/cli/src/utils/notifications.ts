@@ -24,7 +24,8 @@ export class NotificationService {
       this.config.desktop?.enabled ||
       this.config.slack?.enabled ||
       this.config.discord?.enabled ||
-      this.config.email?.enabled
+      this.config.email?.enabled ||
+      this.config.webhook?.enabled
     );
   }
 
@@ -45,6 +46,9 @@ export class NotificationService {
     }
     if (this.config!.email?.enabled) {
       channels.push(this.sendEmail(event));
+    }
+    if (this.config!.webhook?.enabled) {
+      channels.push(this.sendWebhook(event));
     }
 
     const results = await Promise.allSettled(channels);
@@ -291,6 +295,41 @@ export class NotificationService {
       });
     } catch (error) {
       this.logger?.debug(`Email notification failed: ${error}`);
+    }
+  }
+
+  private async sendWebhook(event: NotificationEvent): Promise<void> {
+    const webhookConfig = this.config!.webhook!;
+    if (!webhookConfig.url) return;
+
+    try {
+      const payload = {
+        type: event.type,
+        task: event.taskName,
+        taskPath: event.taskPath,
+        iterations: event.iterations,
+        filesModified: event.filesModified.length,
+        error: event.error ?? null,
+        blockedReason: event.blockedReason ?? null,
+        timestamp: event.timestamp.toISOString(),
+      };
+
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        ...webhookConfig.headers,
+      };
+
+      const response = await fetch(webhookConfig.url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Webhook returned ${response.status}`);
+      }
+    } catch (error) {
+      this.logger?.debug(`Webhook notification failed: ${error}`);
     }
   }
 }
