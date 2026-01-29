@@ -6,6 +6,8 @@
 
 **Structure your AI context. Automate your development tasks.**
 
+**[Documentation](https://rubenmavarezb.github.io/aidf/)** | **[GitHub](https://github.com/rubenmavarezb/aidf)**
+
 ## Installation
 
 ```bash
@@ -40,6 +42,10 @@ aidf status          # View project dashboard
 | `aidf status` | Project dashboard | `--json` |
 | `aidf hooks install` | Install git hooks | `--husky`, `--pre-commit` |
 | `aidf hooks uninstall` | Remove AIDF git hooks | |
+| `aidf skills list` | List discovered skills | |
+| `aidf skills init <name>` | Create a new skill | `--global` |
+| `aidf skills validate` | Validate skills | |
+| `aidf skills add <path>` | Add an external skill | |
 
 ## Configuration
 
@@ -84,13 +90,16 @@ git:
 - Resume blocked tasks with preserved context
 - Git hooks: pre-commit, commit-msg, pre-push
 - Notifications: desktop, Slack, Discord, email
+- Agent Skills: portable, composable [agentskills.io](https://agentskills.io) capabilities (6 built-in)
 - Task templates: bug-fix, new-feature, refactor, test-coverage, documentation, dependency-update
 - Structured logging (text/JSON) with file output and rotation
 - Dry run mode
 
 ## Documentation
 
-Full documentation: [github.com/rubenmavarezb/aidf](https://github.com/rubenmavarezb/aidf)
+Full documentation: **[rubenmavarezb.github.io/aidf](https://rubenmavarezb.github.io/aidf/)** (English, Español, Português, Français)
+
+Source: [github.com/rubenmavarezb/aidf](https://github.com/rubenmavarezb/aidf)
 
 ## License
 

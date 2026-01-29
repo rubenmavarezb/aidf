@@ -48,6 +48,7 @@ export default defineConfig({
             fr: 'Fonctionnalités CLI',
           },
           items: [
+            { label: 'Agent Skills', slug: 'docs/skills', translations: { es: 'Agent Skills', pt: 'Agent Skills', fr: 'Agent Skills' } },
             { label: 'Integrations', slug: 'docs/integrations', translations: { es: 'Integraciones', pt: 'Integrações', fr: 'Intégrations' } },
             { label: 'Git Hooks', slug: 'docs/hooks' },
             { label: 'Notifications', slug: 'docs/notifications', translations: { es: 'Notificaciones', pt: 'Notificações' } },

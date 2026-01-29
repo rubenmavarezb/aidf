@@ -6,6 +6,8 @@
 
 **Structure your AI context. Automate your development tasks.**
 
+**[Documentation](https://rubenmavarezb.github.io/aidf/)** | **[npm](https://www.npmjs.com/package/aidf)** | **[GitHub](https://github.com/rubenmavarezb/aidf)**
+
 ---
 
 ## Two Ways to Use AIDF
@@ -17,6 +19,7 @@ No automation required. Just run `aidf init` and get a `.ai/` folder with struct
 - Works with **Claude Code**, **Cursor**, **GitHub Copilot**, or any LLM
 - Defines project architecture, conventions, and boundaries in `AGENTS.md`
 - Provides specialized roles (developer, architect, tester, reviewer, documenter)
+- Portable [Agent Skills](https://agentskills.io) for composable AI capabilities
 - Scoped task templates keep AI focused on what matters
 
 ### 2. Automation — Execute scoped tasks autonomously
@@ -57,6 +60,10 @@ aidf run             # Execute the first pending task
 | `aidf status` | Project dashboard with stats | `--json` |
 | `aidf hooks install` | Install git hooks | `--husky`, `--pre-commit`, `--force` |
 | `aidf hooks uninstall` | Remove AIDF git hooks | |
+| `aidf skills list` | List discovered skills | |
+| `aidf skills init <name>` | Create a new skill | `--global` |
+| `aidf skills validate` | Validate skills | |
+| `aidf skills add <path>` | Add an external skill | |
 
 All commands support `--log-format <text|json>`, `--log-file <path>`, and `--log-rotate`.
 
@@ -66,12 +73,13 @@ All commands support `--log-format <text|json>`, `--log-file <path>`, and `--log
 aidf init → .ai/ folder → aidf task create → aidf run → AI executes → validates → commits
 ```
 
-AIDF uses 4 layers of context that travel with your project:
+AIDF uses 5 layers of context that travel with your project:
 
 | Layer | Purpose | Location |
 |-------|---------|----------|
 | **AGENTS.md** | Project overview, architecture, conventions, boundaries | `.ai/AGENTS.md` |
 | **Roles** | Specialized AI personas with defined expertise | `.ai/roles/*.md` |
+| **Skills** | Portable, composable capabilities ([agentskills.io](https://agentskills.io)) | `.ai/skills/*/SKILL.md` |
 | **Tasks** | Scoped, executable prompts with clear boundaries | `.ai/tasks/*.md` |
 | **Plans** | Multi-task initiatives grouping related work | `.ai/plans/*.md` |
 
@@ -186,6 +194,14 @@ API providers (anthropic-api, openai-api) include built-in file operation tools:
 │   ├── reviewer.md
 │   └── documenter.md
 │
+├── skills/                # Agent Skills (agentskills.io)
+│   ├── aidf-architect/
+│   ├── aidf-developer/
+│   ├── aidf-tester/
+│   ├── aidf-reviewer/
+│   ├── aidf-documenter/
+│   └── aidf-task-templates/
+│
 ├── templates/             # Reusable templates
 │   ├── TASK.template.md
 │   ├── PLAN.template.md
@@ -213,6 +229,7 @@ API providers (anthropic-api, openai-api) include built-in file operation tools:
 - **Auto-commit & auto-PR** — Commit after each iteration, create PR on completion
 - **Resume blocked tasks** — Preserve context and retry with `--resume`
 - **Git hooks** — Pre-commit (scope validation), commit-msg (conventional commits), pre-push (validation commands)
+- **Agent Skills** — Portable, composable [agentskills.io](https://agentskills.io) capabilities with 6 built-in skills
 - **Notifications** — Desktop, Slack, Discord, and email alerts for completed/failed/blocked tasks
 - **Task templates** — Bug fix, new feature, refactor, test coverage, documentation, dependency update
 - **Structured logging** — Text or JSON format, file output with optional rotation
@@ -241,13 +258,18 @@ Run `aidf hooks install` again. If using Husky, add `--husky` flag. Check that `
 
 ## Documentation
 
+Full documentation available at **[rubenmavarezb.github.io/aidf](https://rubenmavarezb.github.io/aidf/)** (English, Español, Português, Français).
+
 - [Core Concepts](./docs/concepts.md) — Understanding AIDF principles
 - [Setup Guide](./docs/setup.md) — Integrating AIDF into your project
 - [Writing AGENTS.md](./docs/agents-file.md) — Creating effective context documents
 - [Defining Roles](./docs/roles.md) — Creating specialized AI personas
 - [Task Design](./docs/tasks.md) — Writing effective task prompts
 - [Best Practices](./docs/best-practices.md) — Patterns that work
+- [Agent Skills](./docs/skills.md) — Portable agentskills.io capabilities
 - [Integrations](./docs/integrations.md) — Claude Code, Cursor, GitHub Copilot
+- [Git Hooks](./docs/hooks.md) — Scope validation, commit format, push checks
+- [Notifications](./docs/notifications.md) — Desktop, Slack, Discord, email, webhooks
 
 ## License
 
