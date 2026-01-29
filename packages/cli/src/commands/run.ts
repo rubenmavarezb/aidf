@@ -139,7 +139,8 @@ export function createRunCommand(): Command {
             progressBar.update(
               state.iteration,
               state.filesModified.length,
-              state.iteration
+              state.iteration,
+              state.tokenUsage
             );
           },
           onAskUser: async (question: string, files: string[]): Promise<boolean> => {
@@ -160,6 +161,7 @@ export function createRunCommand(): Command {
               progressBar = new ProgressBar(maxIterations, options.quiet);
               progressBar.update(currentIteration, currentFilesModified, currentIteration);
             }
+
             return approved;
           },
         });
@@ -367,10 +369,14 @@ async function resolveTaskPath(
 
 function printResult(result: ExecutorResult, logger: Logger): void {
   console.log('\n');
+  const tokenLine = result.tokenUsage
+    ? `Tokens Used: ${(result.tokenUsage.inputTokens + result.tokenUsage.outputTokens).toLocaleString()} (input: ${result.tokenUsage.inputTokens.toLocaleString()} / output: ${result.tokenUsage.outputTokens.toLocaleString()})`
+    : '';
   logger.box('Execution Result', [
     `Status: ${result.status}`,
     `Iterations: ${result.iterations}`,
     `Files Modified: ${result.filesModified.length}`,
+    tokenLine,
     result.error ? `Error: ${result.error}` : '',
     result.blockedReason ? `Blocked: ${result.blockedReason}` : '',
   ].filter(Boolean).join('\n'));

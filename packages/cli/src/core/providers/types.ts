@@ -1,5 +1,10 @@
 // === Provider Interface ===
 
+export interface TokenUsage {
+  inputTokens: number;
+  outputTokens: number;
+}
+
 export interface ExecutionResult {
   success: boolean;
   output: string;
@@ -7,6 +12,7 @@ export interface ExecutionResult {
   filesChanged: string[];
   iterationComplete: boolean;
   completionSignal?: string;
+  tokenUsage?: TokenUsage;
 }
 
 export interface ProviderOptions {

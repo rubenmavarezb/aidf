@@ -171,6 +171,15 @@ export class Executor {
           dangerouslySkipPermissions: true,
         });
 
+        // Accumulate token usage from this iteration
+        if (result.tokenUsage) {
+          if (!this.state.tokenUsage) {
+            this.state.tokenUsage = { inputTokens: 0, outputTokens: 0 };
+          }
+          this.state.tokenUsage.inputTokens += result.tokenUsage.inputTokens;
+          this.state.tokenUsage.outputTokens += result.tokenUsage.outputTokens;
+        }
+
         // Verificar scope violations
         if (result.filesChanged.length > 0) {
           const fileChanges = result.filesChanged.map(f => ({
@@ -327,6 +336,7 @@ export class Executor {
       error: this.state.lastError,
       blockedReason: this.state.status === 'blocked' ? this.state.lastError : undefined,
       taskPath,
+      tokenUsage: this.state.tokenUsage,
     };
 
     try {
@@ -509,6 +519,10 @@ ${this.state.filesModified.map(f => `- \`${f}\``).join('\n') || '_None_'}
 
     let statusSection: string;
 
+    const tokenLine = this.state.tokenUsage
+      ? `\n- **Tokens used:** ${(this.state.tokenUsage.inputTokens + this.state.tokenUsage.outputTokens).toLocaleString()} (input: ${this.state.tokenUsage.inputTokens.toLocaleString()} / output: ${this.state.tokenUsage.outputTokens.toLocaleString()})`
+      : '';
+
     if (status === 'completed') {
       statusSection = `## Status: ✅ COMPLETED
 
@@ -516,7 +530,7 @@ ${this.state.filesModified.map(f => `- \`${f}\``).join('\n') || '_None_'}
 - **Started:** ${this.state.startedAt?.toISOString()}
 - **Completed:** ${this.state.completedAt?.toISOString()}
 - **Iterations:** ${this.state.iteration}
-- **Files modified:** ${this.state.filesModified.length}
+- **Files modified:** ${this.state.filesModified.length}${tokenLine}
 
 ### Files Modified
 ${this.state.filesModified.map(f => `- \`${f}\``).join('\n') || '_None_'}`;
@@ -526,7 +540,7 @@ ${this.state.filesModified.map(f => `- \`${f}\``).join('\n') || '_None_'}`;
 ### Execution Log
 - **Started:** ${this.state.startedAt?.toISOString()}
 - **Failed at:** ${this.state.completedAt?.toISOString()}
-- **Iterations:** ${this.state.iteration}
+- **Iterations:** ${this.state.iteration}${tokenLine}
 
 ### Error
 \`\`\`
