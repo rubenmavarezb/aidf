@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
 import { Watcher } from './watcher.js';
 import type { ExecutorResult } from '../types/index.js';
 
@@ -40,6 +40,20 @@ vi.mock('yaml', () => ({
   parse: vi.fn((content: string) => JSON.parse(content)),
 }));
 
+// Mock live-status
+vi.mock('../utils/live-status.js', () => ({
+  LiveStatus: vi.fn().mockImplementation(() => ({
+    start: vi.fn(),
+    setPhase: vi.fn(),
+    handleOutput: vi.fn(),
+    phaseComplete: vi.fn(),
+    phaseFailed: vi.fn(),
+    iterationStart: vi.fn(),
+    iterationEnd: vi.fn(),
+    complete: vi.fn(),
+  })),
+}));
+
 // Mock logger
 vi.mock('../utils/logger.js', () => ({
   Logger: vi.fn().mockImplementation(() => ({
@@ -62,8 +76,10 @@ describe('Watcher', () => {
     vi.clearAllMocks();
     vi.useFakeTimers({ shouldAdvanceTime: true });
 
-    // Default: tasks dir exists, no config file
+    // Default: tasks dir exists, no config file, no pending/ subfolder (backward compat)
     mockExistsSync.mockImplementation((p: string) => {
+      // pending/ subfolder does NOT exist by default (backward compat scenario)
+      if (p.endsWith('/pending')) return false;
       if (p.includes('.ai/tasks')) return true;
       return false;
     });
@@ -368,6 +384,33 @@ describe('Watcher', () => {
       );
     });
 
+    it('should pass onPhase, onOutput, and onIteration callbacks', async () => {
+      mockReaddir.mockResolvedValue(['001-task.md']);
+      mockReadFile.mockResolvedValue('# Task\n## Goal\nTest');
+      mockExecuteTask.mockResolvedValue({
+        success: true,
+        status: 'completed',
+        iterations: 1,
+        filesModified: [],
+        taskPath: '/test/project/.ai/tasks/001-task.md',
+      });
+
+      const watcher = new Watcher(projectRoot);
+      const startPromise = watcher.start();
+      await vi.advanceTimersByTimeAsync(100);
+      await watcher.stop();
+      await startPromise;
+
+      expect(mockExecuteTask).toHaveBeenCalledWith(
+        '/test/project/.ai/tasks/001-task.md',
+        expect.objectContaining({
+          onPhase: expect.any(Function),
+          onOutput: expect.any(Function),
+          onIteration: expect.any(Function),
+        })
+      );
+    });
+
     it('should pass verbose and maxIterations options', async () => {
       mockReaddir.mockResolvedValue(['001-task.md']);
       mockReadFile.mockResolvedValue('# Task\n## Goal\nTest');
@@ -423,6 +466,199 @@ describe('Watcher', () => {
       expect(state1).not.toBe(state2);
       expect(state1.queuedTasks).not.toBe(state2.queuedTasks);
       expect(state1.processedTasks).not.toBe(state2.processedTasks);
+    });
+  });
+
+  describe('task modified filtering', () => {
+    /**
+     * Helper to extract chokidar event handlers from the mock.
+     * After watcher.start(), chokidar.watch().on('add', handler) and
+     * .on('change', handler) are called — we capture those handlers.
+     */
+    function getChokidarHandlers(): {
+      add: (filePath: string) => void;
+      change: (filePath: string) => void;
+    } {
+      const calls = mockWatcherInstance.on.mock.calls;
+      const handlers: Record<string, (filePath: string) => void> = {};
+      for (const [event, handler] of calls) {
+        handlers[event] = handler;
+      }
+      return {
+        add: handlers['add'],
+        change: handlers['change'],
+      };
+    }
+
+    it('should not log "Task modified" for a previously processed task while another task is executing', async () => {
+      // Setup: two tasks, first completes, second is running
+      mockReaddir.mockResolvedValue(['001-first.md', '002-second.md']);
+      mockReadFile.mockResolvedValue('# Task\n## Goal\nPending');
+      mockStat.mockResolvedValue({ mtimeMs: Date.now() });
+
+      let resolveSecondTask: (() => void) | undefined;
+      const secondTaskPromise = new Promise<void>(resolve => {
+        resolveSecondTask = resolve;
+      });
+
+      let callCount = 0;
+      mockExecuteTask.mockImplementation(async (taskPath) => {
+        callCount++;
+        if (callCount === 2) {
+          // Block the second task so we can simulate a chokidar event
+          await secondTaskPromise;
+        }
+        return {
+          success: true,
+          status: 'completed' as const,
+          iterations: 1,
+          filesModified: [],
+          taskPath,
+        };
+      });
+
+      const watcher = new Watcher(projectRoot);
+      const startPromise = watcher.start();
+      await vi.advanceTimersByTimeAsync(100);
+
+      const { change } = getChokidarHandlers();
+
+      // Wait until the second task is executing
+      // At this point, first task is processed and second task is running
+      // Advance timers to let the queue process
+      await vi.advanceTimersByTimeAsync(200);
+
+      // Simulate chokidar detecting the change to the first task's file
+      // (executor wrote COMPLETED status to it)
+      const firstTaskPath = '/test/project/.ai/tasks/001-first.md';
+      change(firstTaskPath);
+
+      // Advance past debounce
+      await vi.advanceTimersByTimeAsync(600);
+
+      // Get the logger mock instance
+      const { Logger } = await import('../utils/logger.js');
+      const loggerInstance = (Logger as unknown as Mock).mock.results[0].value;
+
+      // The "Task modified: 001-first.md" info log should NOT have been called
+      const infoCalls = loggerInstance.info.mock.calls
+        .map((c: string[]) => c[0])
+        .filter((msg: string) => msg.includes('Task modified') && msg.includes('001-first.md'));
+      expect(infoCalls).toHaveLength(0);
+
+      // Clean up: resolve the second task and stop the watcher
+      resolveSecondTask!();
+      await vi.advanceTimersByTimeAsync(100);
+      await watcher.stop();
+      await startPromise;
+    });
+
+    it('should not log "Task modified" for the currently executing task', async () => {
+      mockReaddir.mockResolvedValue(['001-task.md']);
+      mockReadFile.mockResolvedValue('# Task\n## Goal\nPending');
+      mockStat.mockResolvedValue({ mtimeMs: Date.now() });
+
+      let resolveTask: (() => void) | undefined;
+      const taskPromise = new Promise<void>(resolve => {
+        resolveTask = resolve;
+      });
+
+      mockExecuteTask.mockImplementation(async (taskPath) => {
+        await taskPromise;
+        return {
+          success: true,
+          status: 'completed' as const,
+          iterations: 1,
+          filesModified: [],
+          taskPath,
+        };
+      });
+
+      const watcher = new Watcher(projectRoot);
+      const startPromise = watcher.start();
+      await vi.advanceTimersByTimeAsync(100);
+
+      const { change } = getChokidarHandlers();
+
+      // Wait for task to start executing
+      await vi.advanceTimersByTimeAsync(200);
+
+      // Simulate chokidar detecting a change to the currently executing task
+      const currentTaskPath = '/test/project/.ai/tasks/001-task.md';
+      change(currentTaskPath);
+
+      // Advance past debounce
+      await vi.advanceTimersByTimeAsync(600);
+
+      const { Logger } = await import('../utils/logger.js');
+      const loggerInstance = (Logger as unknown as Mock).mock.results[0].value;
+
+      // Should NOT log "Task modified" for the current task
+      const infoCalls = loggerInstance.info.mock.calls
+        .map((c: string[]) => c[0])
+        .filter((msg: string) => msg.includes('Task modified') && msg.includes('001-task.md'));
+      expect(infoCalls).toHaveLength(0);
+
+      // Should log a debug message about ignoring the change
+      const debugCalls = loggerInstance.debug.mock.calls
+        .map((c: string[]) => c[0])
+        .filter((msg: string) => msg.includes('Ignoring change to currently executing task'));
+      expect(debugCalls.length).toBeGreaterThan(0);
+
+      // Clean up
+      resolveTask!();
+      await vi.advanceTimersByTimeAsync(100);
+      await watcher.stop();
+      await startPromise;
+    });
+
+    it('should allow changes to previously processed tasks when no task is executing', async () => {
+      mockReaddir.mockResolvedValue(['001-task.md']);
+      mockReadFile.mockResolvedValue('# Task\n## Goal\nPending');
+      mockStat.mockResolvedValue({ mtimeMs: Date.now() });
+
+      mockExecuteTask.mockResolvedValue({
+        success: true,
+        status: 'completed' as const,
+        iterations: 1,
+        filesModified: [],
+        taskPath: '/test/project/.ai/tasks/001-task.md',
+      });
+
+      const watcher = new Watcher(projectRoot);
+      const startPromise = watcher.start();
+
+      // Let first task complete
+      await vi.advanceTimersByTimeAsync(200);
+
+      // At this point, no task is executing (currentTask = null)
+      // and 001-task.md is in processedTasks
+      const state = watcher.getState();
+      expect(state.currentTask).toBeNull();
+
+      const { change } = getChokidarHandlers();
+
+      // Reset info calls to isolate the test
+      const { Logger } = await import('../utils/logger.js');
+      const loggerInstance = (Logger as unknown as Mock).mock.results[0].value;
+      loggerInstance.info.mockClear();
+
+      // Now simulate a user modifying the previously processed task
+      // (e.g., editing a blocked task to unblock it)
+      const taskPath = '/test/project/.ai/tasks/001-task.md';
+      change(taskPath);
+
+      // Advance past debounce
+      await vi.advanceTimersByTimeAsync(600);
+
+      // Should log "Task modified" since no task is currently executing
+      const infoCalls = loggerInstance.info.mock.calls
+        .map((c: string[]) => c[0])
+        .filter((msg: string) => msg.includes('Task modified') && msg.includes('001-task.md'));
+      expect(infoCalls).toHaveLength(1);
+
+      await watcher.stop();
+      await startPromise;
     });
   });
 });

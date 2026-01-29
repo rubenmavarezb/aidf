@@ -1,10 +1,12 @@
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
+import mermaid from 'astro-mermaid';
 
 export default defineConfig({
   site: 'https://rubenmavarezb.github.io',
   base: '/aidf',
   integrations: [
+    mermaid(),
     starlight({
       title: 'AIDF',
       description: 'AI-Integrated Development Framework — Structure your AI context. Automate your development tasks.',
@@ -35,6 +37,7 @@ export default defineConfig({
         {
           label: 'Framework',
           items: [
+            { label: 'Architecture', slug: 'docs/architecture', translations: { es: 'Arquitectura', pt: 'Arquitetura', fr: 'Architecture' } },
             { label: 'Defining Roles', slug: 'docs/roles', translations: { es: 'Definir Roles', pt: 'Definindo Roles', fr: 'Définir les Rôles' } },
             { label: 'Task Design', slug: 'docs/tasks', translations: { es: 'Diseño de Tareas', pt: 'Design de Tarefas', fr: 'Conception de Tâches' } },
             { label: 'Best Practices', slug: 'docs/best-practices', translations: { es: 'Buenas Prácticas', pt: 'Boas Práticas', fr: 'Bonnes Pratiques' } },
@@ -52,6 +55,7 @@ export default defineConfig({
             { label: 'Integrations', slug: 'docs/integrations', translations: { es: 'Integraciones', pt: 'Integrações', fr: 'Intégrations' } },
             { label: 'Git Hooks', slug: 'docs/hooks' },
             { label: 'Notifications', slug: 'docs/notifications', translations: { es: 'Notificaciones', pt: 'Notificações' } },
+            { label: 'FAQ', slug: 'docs/faq', translations: { es: 'Preguntas Frecuentes', pt: 'Perguntas Frequentes', fr: 'Foire aux Questions' } },
           ],
         },
       ],

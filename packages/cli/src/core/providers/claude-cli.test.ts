@@ -294,4 +294,31 @@ describe('buildIterationPrompt', () => {
 
     expect(prompt).toContain('Definition of Done');
   });
+
+  it('should include previous validation error when provided', () => {
+    const prompt = buildIterationPrompt({
+      agents: 'agents',
+      role: 'role',
+      task: 'task',
+      iteration: 2,
+      previousValidationError: '❌ pnpm typecheck failed\nerror TS2345: Argument...',
+    });
+
+    expect(prompt).toContain('Previous Iteration Feedback');
+    expect(prompt).toContain('signaled <TASK_COMPLETE> but validation failed');
+    expect(prompt).toContain('pnpm typecheck failed');
+    expect(prompt).toContain('fix the validation errors');
+    expect(prompt).toContain('signal <TASK_COMPLETE> again');
+  });
+
+  it('should not include validation error section when not provided', () => {
+    const prompt = buildIterationPrompt({
+      agents: 'agents',
+      role: 'role',
+      task: 'task',
+      iteration: 1,
+    });
+
+    expect(prompt).not.toContain('Previous Iteration Feedback');
+  });
 });

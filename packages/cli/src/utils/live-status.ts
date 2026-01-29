@@ -1,13 +1,8 @@
 import chalk from 'chalk';
+import type { PhaseEvent } from '../types/index.js';
 
-export interface PhaseEvent {
-  phase: string;
-  iteration: number;
-  totalIterations: number;
-  filesModified: number;
-}
-
-const HEARTBEAT_INTERVAL = 15_000; // 15 seconds
+const HEARTBEAT_INTERVAL = 3_000; // 3 seconds
+const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
 /**
  * Live status indicator that prints periodic heartbeat lines during execution.
@@ -24,6 +19,7 @@ export class LiveStatus {
   private quiet: boolean;
   private active = false;
   private lastOutputTime = 0;
+  private spinnerIndex = 0;
 
   constructor(totalIterations: number, quiet: boolean = false) {
     this.totalIterations = totalIterations;
@@ -37,6 +33,8 @@ export class LiveStatus {
   start(): void {
     if (this.quiet) return;
     this.active = true;
+    this.startTime = Date.now();
+    this.printStatus('phase');
     this.heartbeatTimer = setInterval(() => this.heartbeat(), HEARTBEAT_INTERVAL);
   }
 
@@ -45,13 +43,14 @@ export class LiveStatus {
    */
   setPhase(event: PhaseEvent): void {
     const previousPhase = this.phase;
+    const previousIteration = this.iteration;
     this.phase = event.phase;
     this.iteration = event.iteration;
     this.totalIterations = event.totalIterations;
     this.filesModified = event.filesModified;
 
-    // Print phase transition (but not the first "Executing AI" — that's obvious)
-    if (this.active && previousPhase && previousPhase !== event.phase) {
+    // Print on phase transitions or iteration transitions
+    if (this.active && (previousPhase !== event.phase || previousIteration !== event.iteration)) {
       this.printStatus('phase');
     }
   }
@@ -84,6 +83,28 @@ export class LiveStatus {
   }
 
   /**
+   * Log iteration start (non-TTY fallback: always prints a line)
+   */
+  iterationStart(iteration: number, totalIterations: number): void {
+    if (this.quiet) return;
+    this.iteration = iteration;
+    this.totalIterations = totalIterations;
+    const elapsed = this.formatElapsed();
+    console.log(`${chalk.cyan('▸')} ${chalk.gray(`Iteration ${iteration}/${totalIterations} started · ⏱ ${elapsed}`)}`);
+  }
+
+  /**
+   * Log iteration end with summary
+   */
+  iterationEnd(iteration: number, filesModified: number, success: boolean): void {
+    if (this.quiet) return;
+    const elapsed = this.formatElapsed();
+    const files = `${filesModified} file${filesModified !== 1 ? 's' : ''} modified`;
+    const prefix = success ? chalk.green('✓') : chalk.red('✗');
+    console.log(`${prefix} ${chalk.gray(`Iteration ${iteration} completed · ${files} · ⏱ ${elapsed}`)}`);
+  }
+
+  /**
    * Stop the live status entirely
    */
   complete(): void {
@@ -100,10 +121,10 @@ export class LiveStatus {
   private heartbeat(): void {
     if (this.quiet || !this.active) return;
 
-    // Only print heartbeat if no AI output in the last 5 seconds
+    // Only print heartbeat if no AI output in the last 3 seconds
     // (avoids cluttering when the AI is actively streaming)
     const silentMs = Date.now() - this.lastOutputTime;
-    if (this.lastOutputTime > 0 && silentMs < 5000) return;
+    if (this.lastOutputTime > 0 && silentMs < 3000) return;
 
     this.printStatus('heartbeat');
   }
@@ -115,7 +136,7 @@ export class LiveStatus {
     const files = `${this.filesModified} file${this.filesModified !== 1 ? 's' : ''}`;
 
     const prefix = type === 'heartbeat'
-      ? chalk.gray('⋯')
+      ? chalk.yellow(SPINNER_FRAMES[this.spinnerIndex++ % SPINNER_FRAMES.length])
       : chalk.cyan('▸');
 
     const line = `${prefix} ${chalk.gray(`${iter} · ${phase} · ${files} · ⏱ ${elapsed}`)}`;

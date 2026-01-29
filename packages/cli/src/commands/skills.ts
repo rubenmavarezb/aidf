@@ -5,9 +5,9 @@ import { existsSync, mkdirSync, writeFileSync, readFileSync, cpSync } from 'fs';
 import { join, basename } from 'path';
 import chalk from 'chalk';
 import YAML from 'yaml';
-import { SkillLoader, validateSkillContent, createSkillTemplate } from '../core/skill-loader.js';
+import { SkillLoader, validateSkillContent, validateSkillSecurity, createSkillTemplate } from '../core/skill-loader.js';
 import { ContextLoader } from '../core/context-loader.js';
-import type { SkillsConfig } from '../types/index.js';
+import type { SkillsConfig, SecurityWarning } from '../types/index.js';
 
 function loadSkillsConfig(): SkillsConfig {
   try {
@@ -22,6 +22,16 @@ function loadSkillsConfig(): SkillsConfig {
     return config?.skills ?? {};
   } catch {
     return {};
+  }
+}
+
+function printSecurityWarnings(warnings: SecurityWarning[], indent: string = '  '): void {
+  for (const w of warnings) {
+    const levelLabel = w.level === 'danger'
+      ? chalk.red(`[DANGER]`)
+      : chalk.yellow(`[WARNING]`);
+    const lineInfo = w.line ? chalk.gray(` (line ${w.line})`) : '';
+    console.log(`${indent}${levelLabel} ${w.description}${lineInfo}`);
   }
 }
 
@@ -121,14 +131,24 @@ export function createSkillsCommand(): Command {
           }
 
           const errors = validateSkillContent(skill.content);
-          if (errors.length === 0) {
+          const securityWarnings = validateSkillSecurity(skill.content);
+
+          if (errors.length === 0 && securityWarnings.length === 0) {
             console.log(chalk.green(`Skill "${name}" is valid.`));
           } else {
-            console.log(chalk.red(`Skill "${name}" has ${errors.length} error(s):`));
-            for (const err of errors) {
-              console.log(`  ${chalk.red('•')} ${err}`);
+            if (errors.length > 0) {
+              console.log(chalk.red(`Skill "${name}" has ${errors.length} error(s):`));
+              for (const err of errors) {
+                console.log(`  ${chalk.red('•')} ${err}`);
+              }
             }
-            process.exit(1);
+            if (securityWarnings.length > 0) {
+              console.log(`\n${chalk.bold('Security analysis:')}`);
+              printSecurityWarnings(securityWarnings);
+            }
+            if (errors.length > 0) {
+              process.exit(1);
+            }
           }
         } else {
           // Validate all skills
@@ -140,22 +160,36 @@ export function createSkillsCommand(): Command {
           }
 
           let allValid = true;
+          let hasSecurityWarnings = false;
 
           for (const skill of skills) {
             const errors = validateSkillContent(skill.content);
-            if (errors.length === 0) {
+            const securityWarnings = validateSkillSecurity(skill.content);
+
+            if (errors.length === 0 && securityWarnings.length === 0) {
               console.log(`  ${chalk.green('✓')} ${skill.metadata.name}`);
-            } else {
+            } else if (errors.length > 0) {
               allValid = false;
               console.log(`  ${chalk.red('✗')} ${skill.metadata.name}`);
               for (const err of errors) {
                 console.log(`    ${chalk.red('•')} ${err}`);
               }
+              if (securityWarnings.length > 0) {
+                hasSecurityWarnings = true;
+                printSecurityWarnings(securityWarnings, '    ');
+              }
+            } else {
+              // Valid content but has security warnings
+              hasSecurityWarnings = true;
+              console.log(`  ${chalk.yellow('⚠')} ${skill.metadata.name}`);
+              printSecurityWarnings(securityWarnings, '    ');
             }
           }
 
-          if (allValid) {
+          if (allValid && !hasSecurityWarnings) {
             console.log(chalk.green(`\nAll ${skills.length} skill(s) are valid.`));
+          } else if (allValid && hasSecurityWarnings) {
+            console.log(chalk.yellow(`\nAll ${skills.length} skill(s) are structurally valid, but some have security warnings.`));
           } else {
             process.exit(1);
           }

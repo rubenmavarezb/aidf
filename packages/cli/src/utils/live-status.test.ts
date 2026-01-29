@@ -24,12 +24,27 @@ describe('LiveStatus', () => {
 
   describe('start/complete', () => {
     it('should start and stop without errors', () => {
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
       const status = new LiveStatus(50);
       status.start();
       status.complete();
+      logSpy.mockRestore();
     });
 
-    it('should not print heartbeat in quiet mode', () => {
+    it('should print initial status line on start', () => {
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const status = new LiveStatus(50);
+      status.start();
+
+      expect(logSpy).toHaveBeenCalledTimes(1);
+      const call = logSpy.mock.calls[0][0] as string;
+      expect(call).toContain('Starting');
+
+      status.complete();
+      logSpy.mockRestore();
+    });
+
+    it('should not print anything in quiet mode', () => {
       const status = new LiveStatus(50, true);
       const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
       status.start();
@@ -44,10 +59,11 @@ describe('LiveStatus', () => {
       const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
       status.start();
       status.setPhase({ phase: 'Executing AI', iteration: 1, totalIterations: 50, filesModified: 0 });
-      // Reset mock to ignore the phase transition log
+      // Reset mock to ignore the initial status + phase transition logs
       logSpy.mockClear();
 
-      vi.advanceTimersByTime(15000);
+      // Heartbeat interval is 3s — advance just past the first one
+      vi.advanceTimersByTime(3000);
       expect(logSpy).toHaveBeenCalledTimes(1);
       const call = logSpy.mock.calls[0][0] as string;
       expect(call).toContain('Iteration 1/50');
@@ -65,12 +81,12 @@ describe('LiveStatus', () => {
       status.setPhase({ phase: 'Executing AI', iteration: 1, totalIterations: 50, filesModified: 0 });
       logSpy.mockClear();
 
-      // Simulate AI output at 13s — within 5s window of heartbeat at 15s
-      vi.advanceTimersByTime(13000);
+      // Simulate AI output at 1s — within 3s window of heartbeat at 3s
+      vi.advanceTimersByTime(1000);
       status.handleOutput('some AI output');
-      vi.advanceTimersByTime(2000); // now at 15s
+      vi.advanceTimersByTime(2000); // now at 3s — heartbeat fires but suppressed (output was 2s ago)
 
-      // Heartbeat should be suppressed (AI output was < 5s ago)
+      // Heartbeat should be suppressed (AI output was < 3s ago)
       expect(logSpy).not.toHaveBeenCalled();
 
       status.complete();
@@ -80,20 +96,68 @@ describe('LiveStatus', () => {
   });
 
   describe('setPhase', () => {
+    it('should print on first phase', () => {
+      const status = new LiveStatus(50);
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      status.start();
+      // Clear the initial status line from start()
+      logSpy.mockClear();
+
+      // First phase — should now print
+      status.setPhase({ phase: 'Executing AI', iteration: 1, totalIterations: 50, filesModified: 0 });
+      expect(logSpy).toHaveBeenCalledTimes(1);
+      const call = logSpy.mock.calls[0][0] as string;
+      expect(call).toContain('Executing AI');
+
+      status.complete();
+      logSpy.mockRestore();
+    });
+
     it('should print on phase transition', () => {
       const status = new LiveStatus(50);
       const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
       status.start();
-
-      // First phase — no previous phase, so no print
       status.setPhase({ phase: 'Executing AI', iteration: 1, totalIterations: 50, filesModified: 0 });
-      expect(logSpy).not.toHaveBeenCalled();
+      logSpy.mockClear();
 
       // Phase transition — should print
       status.setPhase({ phase: 'Checking scope', iteration: 1, totalIterations: 50, filesModified: 2 });
       expect(logSpy).toHaveBeenCalledTimes(1);
       const call = logSpy.mock.calls[0][0] as string;
       expect(call).toContain('Checking scope');
+
+      status.complete();
+      logSpy.mockRestore();
+    });
+
+    it('should not print when phase and iteration are the same', () => {
+      const status = new LiveStatus(50);
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      status.start();
+      status.setPhase({ phase: 'Executing AI', iteration: 1, totalIterations: 50, filesModified: 0 });
+      logSpy.mockClear();
+
+      // Same phase and iteration — should not print
+      status.setPhase({ phase: 'Executing AI', iteration: 1, totalIterations: 50, filesModified: 1 });
+      expect(logSpy).not.toHaveBeenCalled();
+
+      status.complete();
+      logSpy.mockRestore();
+    });
+
+    it('should print when iteration changes even if phase is the same', () => {
+      const status = new LiveStatus(50);
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      status.start();
+      status.setPhase({ phase: 'Executing AI', iteration: 1, totalIterations: 50, filesModified: 0 });
+      logSpy.mockClear();
+
+      // Same phase but different iteration — should print
+      status.setPhase({ phase: 'Executing AI', iteration: 2, totalIterations: 50, filesModified: 1 });
+      expect(logSpy).toHaveBeenCalledTimes(1);
+      const call = logSpy.mock.calls[0][0] as string;
+      expect(call).toContain('Iteration 2/50');
+      expect(call).toContain('Executing AI');
 
       status.complete();
       logSpy.mockRestore();
@@ -138,6 +202,69 @@ describe('LiveStatus', () => {
       expect(logSpy).toHaveBeenCalledTimes(1);
       const call = logSpy.mock.calls[0][0] as string;
       expect(call).toContain('Validation failed');
+      logSpy.mockRestore();
+    });
+  });
+
+  describe('iterationStart', () => {
+    it('should log iteration start message', () => {
+      const status = new LiveStatus(50);
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      status.iterationStart(1, 50);
+      expect(logSpy).toHaveBeenCalledTimes(1);
+      const call = logSpy.mock.calls[0][0] as string;
+      expect(call).toContain('Iteration 1/50');
+      expect(call).toContain('started');
+      logSpy.mockRestore();
+    });
+
+    it('should not log in quiet mode', () => {
+      const status = new LiveStatus(50, true);
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      status.iterationStart(1, 50);
+      expect(logSpy).not.toHaveBeenCalled();
+      logSpy.mockRestore();
+    });
+  });
+
+  describe('iterationEnd', () => {
+    it('should log successful iteration end', () => {
+      const status = new LiveStatus(50);
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      status.iterationEnd(1, 3, true);
+      expect(logSpy).toHaveBeenCalledTimes(1);
+      const call = logSpy.mock.calls[0][0] as string;
+      expect(call).toContain('Iteration 1 completed');
+      expect(call).toContain('3 files modified');
+      logSpy.mockRestore();
+    });
+
+    it('should log failed iteration end', () => {
+      const status = new LiveStatus(50);
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      status.iterationEnd(2, 0, false);
+      expect(logSpy).toHaveBeenCalledTimes(1);
+      const call = logSpy.mock.calls[0][0] as string;
+      expect(call).toContain('Iteration 2 completed');
+      expect(call).toContain('0 files modified');
+      logSpy.mockRestore();
+    });
+
+    it('should use singular "file" for 1 file', () => {
+      const status = new LiveStatus(50);
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      status.iterationEnd(1, 1, true);
+      const call = logSpy.mock.calls[0][0] as string;
+      expect(call).toContain('1 file modified');
+      expect(call).not.toContain('1 files');
+      logSpy.mockRestore();
+    });
+
+    it('should not log in quiet mode', () => {
+      const status = new LiveStatus(50, true);
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      status.iterationEnd(1, 0, true);
+      expect(logSpy).not.toHaveBeenCalled();
       logSpy.mockRestore();
     });
   });

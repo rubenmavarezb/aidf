@@ -8,14 +8,17 @@ import type {
   AidfConfig,
   LoadedContext,
   BlockedStatus,
+  TokenUsageSummary,
 } from '../types/index.js';
-import { loadContext } from './context-loader.js';
+import { loadContext, estimateContextSize } from './context-loader.js';
 import { createProvider, type Provider } from './providers/index.js';
 import { buildIterationPrompt } from './providers/claude-cli.js';
 import { ScopeGuard } from './safety.js';
 import { Validator } from './validator.js';
 import { Logger } from '../utils/logger.js';
 import { NotificationService } from '../utils/notifications.js';
+import { resolveConfig, detectPlaintextSecrets } from '../utils/config.js';
+import { moveTaskFile } from '../utils/files.js';
 
 export class Executor {
   private options: ExecutorOptions;
@@ -84,9 +87,40 @@ export class Executor {
     // Set initial context
     this.logger.setContext({ task: taskPath, iteration: 0 });
 
+    // Resolve env var references in config before using it
+    try {
+      this.config = resolveConfig(this.config);
+    } catch (error) {
+      this.logger.error(
+        `Failed to resolve config: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
+      this.state.status = 'failed';
+      this.state.lastError = error instanceof Error ? error.message : 'Config resolution failed';
+      this.state.completedAt = new Date();
+      return {
+        success: false,
+        status: 'failed',
+        iterations: 0,
+        filesModified: [],
+        error: this.state.lastError,
+        taskPath,
+      };
+    }
+
+    // Warn about possible plaintext secrets in config
+    try {
+      const secretWarnings = detectPlaintextSecrets(this.config as unknown as Record<string, unknown>);
+      for (const warning of secretWarnings) {
+        this.logger.warn(warning);
+      }
+    } catch {
+      // Secret detection is best-effort, don't fail execution
+    }
+
     let consecutiveFailures = 0;
     let context: LoadedContext;
     let blockedStatus = null;
+    let lastValidationError: string | undefined;
 
     try {
       // Cargar contexto
@@ -121,6 +155,28 @@ export class Executor {
       this.log(`Role: ${context.role.name}`);
       this.log(`Scope: ${context.task.scope.allowed.join(', ')}`);
 
+      // Estimate and log context size
+      try {
+        const contextSize = estimateContextSize(context);
+        this.state.contextTokens = contextSize.total;
+        this.state.contextBreakdown = contextSize.breakdown;
+
+        const b = contextSize.breakdown;
+        const pct = (v: number) => contextSize.total > 0 ? Math.round((v / contextSize.total) * 100) : 0;
+        this.logger.info(`Context loaded: ~${contextSize.total.toLocaleString()} tokens`);
+        this.logger.info(`  AGENTS.md:  ${b.agents.toLocaleString()} tokens (${pct(b.agents)}%)`);
+        this.logger.info(`  Role:       ${b.role.toLocaleString()} tokens (${pct(b.role)}%)`);
+        if (b.skills > 0) {
+          this.logger.info(`  Skills:     ${b.skills.toLocaleString()} tokens (${pct(b.skills)}%)`);
+        }
+        this.logger.info(`  Task:       ${b.task.toLocaleString()} tokens (${pct(b.task)}%)`);
+        if (b.plan > 0) {
+          this.logger.info(`  Plan:       ${b.plan.toLocaleString()} tokens (${pct(b.plan)}%)`);
+        }
+      } catch {
+        // Context size estimation is informational — don't fail execution
+      }
+
       // Security warning for skip_permissions
       const skipPermissions = this.config.security?.skip_permissions ?? true;
       const warnOnSkip = this.config.security?.warn_on_skip ?? true;
@@ -153,6 +209,9 @@ export class Executor {
         });
         this.log(`\n=== Iteration ${this.state.iteration} ===`);
 
+        // Emit iteration start so live status can show feedback
+        this.emitPhase('Starting iteration');
+
         // Construir prompt con contexto de bloqueo si existe
         const prompt = buildIterationPrompt({
           agents: context.agents.raw,
@@ -161,6 +220,7 @@ export class Executor {
           plan: context.plan,
           skills: context.skills,
           iteration: this.state.iteration,
+          previousValidationError: lastValidationError,
           blockingContext: blockedStatus ? {
             previousIteration: blockedStatus.previousIteration,
             blockingIssue: blockedStatus.blockingIssue,
@@ -191,7 +251,15 @@ export class Executor {
           }
           this.state.tokenUsage.inputTokens += result.tokenUsage.inputTokens;
           this.state.tokenUsage.outputTokens += result.tokenUsage.outputTokens;
+
+          this.logger.info(
+            `Iteration ${this.state.iteration} tokens: input=${result.tokenUsage.inputTokens.toLocaleString()}, output=${result.tokenUsage.outputTokens.toLocaleString()}`
+          );
         }
+
+        // Capture completion signal BEFORE scope/validation checks so it's
+        // never lost by a `continue` in those blocks.
+        const hasCompletionSignal = result.iterationComplete;
 
         this.emitPhase('Checking scope');
 
@@ -207,7 +275,20 @@ export class Executor {
           if (scopeDecision.action === 'BLOCK') {
             this.log(`Scope violation: ${scopeDecision.reason}`);
             await this.revertChanges(scopeDecision.files);
+
+            if (hasCompletionSignal) {
+              // AI signaled completion but also touched files outside scope.
+              // The out-of-scope files have been reverted. If only forbidden
+              // files were changed, accept the completion (the task itself is
+              // done, the AI just touched extra files). If allowed files were
+              // also changed and committed, break as complete.
+              this.log(`AI signaled completion but had scope violations. Violations reverted — accepting completion.`);
+              this.state.status = 'completed';
+              break;
+            }
+
             consecutiveFailures++;
+            this.emitPhase('Scope violation');
             continue;
           }
 
@@ -232,10 +313,22 @@ export class Executor {
         this.state.validationResults.push(validation);
 
         if (!validation.passed) {
-          this.log(`Validation failed: ${Validator.formatReport(validation)}`);
+          const validationReport = Validator.formatReport(validation);
+          this.log(`Validation failed: ${validationReport}`);
+
+          if (hasCompletionSignal) {
+            // AI signaled completion but validation failed — save error for next prompt
+            this.log(`AI signaled completion but validation failed. Retrying with feedback.`);
+            lastValidationError = validationReport;
+          }
+
           consecutiveFailures++;
+          this.emitPhase('Validation failed');
           continue;
         }
+
+        // Validation passed — clear any previous validation error
+        lastValidationError = undefined;
 
         // Commit si autoCommit está habilitado
         if (this.options.autoCommit && result.filesChanged.length > 0) {
@@ -251,7 +344,7 @@ export class Executor {
         this.options.onIteration?.({ ...this.state });
 
         // Verificar completado
-        if (result.iterationComplete) {
+        if (hasCompletionSignal) {
           this.logger.setContext({
             task: taskPath,
             iteration: this.state.iteration,
@@ -260,7 +353,7 @@ export class Executor {
           });
           this.log(`Task complete: ${result.completionSignal}`);
           this.state.status = 'completed';
-          
+
           // Limpiar estado BLOCKED si estaba resumiendo
           if (this.options.resume && blockedStatus) {
             try {
@@ -269,7 +362,7 @@ export class Executor {
               // Ignore errors when updating task file (e.g., in tests)
             }
           }
-          
+
           break;
         }
 
@@ -350,6 +443,45 @@ export class Executor {
       } catch {
         // Ignore errors when updating task file (e.g., in tests)
       }
+
+      // Move task file to appropriate status folder
+      if (this.state.status === 'completed') {
+        try {
+          const newPath = moveTaskFile(taskPath, 'completed');
+          if (newPath !== taskPath) {
+            this.log(`Moved task file to completed/`);
+            // Stage the moved task file so it doesn't appear as a modified file
+            // when the next task starts (prevents "Task modified: <previous-task>")
+            await this.stageTaskFileChanges(taskPath, newPath);
+          } else {
+            await this.stageTaskFileChanges(taskPath);
+          }
+        } catch {
+          // Task file movement is best-effort
+        }
+      } else {
+        // Failed status: stage the task file update
+        try {
+          await this.stageTaskFileChanges(taskPath);
+        } catch {
+          // Staging is best-effort
+        }
+      }
+    }
+
+    // Move blocked tasks to blocked/ folder
+    if (this.state.status === 'blocked') {
+      try {
+        const newPath = moveTaskFile(taskPath, 'blocked');
+        if (newPath !== taskPath) {
+          this.log(`Moved task file to blocked/`);
+          await this.stageTaskFileChanges(taskPath, newPath);
+        } else {
+          await this.stageTaskFileChanges(taskPath);
+        }
+      } catch {
+        // Task file movement is best-effort
+      }
     }
 
     // Push si autoPush está habilitado
@@ -357,6 +489,9 @@ export class Executor {
       await this.git.push();
       this.log('Pushed changes to remote');
     }
+
+    // Build token usage summary
+    const tokenUsageSummary = this.buildTokenUsageSummary();
 
     const executorResult: ExecutorResult = {
       success: this.state.status === 'completed',
@@ -366,8 +501,15 @@ export class Executor {
       error: this.state.lastError,
       blockedReason: this.state.status === 'blocked' ? this.state.lastError : undefined,
       taskPath,
-      tokenUsage: this.state.tokenUsage,
+      tokenUsage: tokenUsageSummary,
     };
+
+    // Log final summary
+    try {
+      this.logExecutionSummary(executorResult);
+    } catch {
+      // Summary logging is informational — don't fail execution
+    }
 
     try {
       await this.notificationService.notifyResult(executorResult);
@@ -405,6 +547,67 @@ export class Executor {
 
   // --- Helpers privados ---
 
+  /**
+   * Builds a TokenUsageSummary from accumulated state
+   */
+  private buildTokenUsageSummary(): TokenUsageSummary | undefined {
+    const contextTokens = this.state.contextTokens ?? 0;
+    const inputTokens = this.state.tokenUsage?.inputTokens ?? 0;
+    const outputTokens = this.state.tokenUsage?.outputTokens ?? 0;
+
+    if (contextTokens === 0 && inputTokens === 0 && outputTokens === 0) {
+      return undefined;
+    }
+
+    const totalTokens = inputTokens + outputTokens;
+
+    // Estimate cost: Claude Sonnet pricing ~$3/MTok input, ~$15/MTok output
+    const estimatedCost = inputTokens > 0 || outputTokens > 0
+      ? (inputTokens / 1_000_000) * 3 + (outputTokens / 1_000_000) * 15
+      : undefined;
+
+    return {
+      contextTokens,
+      totalInputTokens: inputTokens,
+      totalOutputTokens: outputTokens,
+      totalTokens,
+      estimatedCost,
+      breakdown: this.state.contextBreakdown,
+      inputTokens,
+      outputTokens,
+    };
+  }
+
+  /**
+   * Logs a final execution summary box
+   */
+  private logExecutionSummary(result: ExecutorResult): void {
+    const taskName = result.taskPath.split('/').pop() ?? result.taskPath;
+    const lines: string[] = [];
+
+    lines.push(`Task: ${taskName}`);
+    lines.push(`Iterations: ${result.iterations}`);
+    lines.push(`Files: ${result.filesModified.length}`);
+
+    if (result.tokenUsage) {
+      const tu = result.tokenUsage;
+      lines.push(`Context: ~${tu.contextTokens.toLocaleString()} tokens`);
+
+      if (tu.totalInputTokens > 0 || tu.totalOutputTokens > 0) {
+        lines.push(`Total tokens: ~${tu.totalTokens.toLocaleString()}`);
+        lines.push(`  Input:  ~${tu.totalInputTokens.toLocaleString()}`);
+        lines.push(`  Output: ~${tu.totalOutputTokens.toLocaleString()}`);
+      }
+
+      if (tu.estimatedCost !== undefined) {
+        lines.push(`Est. cost: ~$${tu.estimatedCost.toFixed(2)}`);
+      }
+    }
+
+    const title = result.success ? 'Task Completed' : (result.status === 'blocked' ? 'Task Blocked' : 'Task Failed');
+    this.logger.box(title, lines.join('\n'));
+  }
+
   private emitPhase(phase: string): void {
     this.options.onPhase?.({
       phase,
@@ -419,6 +622,25 @@ export class Executor {
       this.logger.debug(`[aidf] ${message}`);
     } else {
       this.logger.info(message);
+    }
+  }
+
+  /**
+   * Stages task file changes so they don't appear as modified when the next
+   * task starts. This prevents the watcher from logging
+   * "Task modified: <previous-task>" while a new task is executing.
+   */
+  private async stageTaskFileChanges(oldPath: string, newPath?: string): Promise<void> {
+    try {
+      if (newPath && newPath !== oldPath) {
+        // File was moved: stage both the removal and the new file
+        await this.git.add([newPath]);
+        await this.git.raw(['rm', '--cached', '--ignore-unmatch', oldPath]);
+      } else {
+        await this.git.add([oldPath]);
+      }
+    } catch {
+      // Staging is best-effort — don't fail execution
     }
   }
 

@@ -25,6 +25,7 @@ interface InitAnswers {
 }
 
 interface InitConfig {
+  framework: string;
   version: string;
   project: {
     name: string;
@@ -42,6 +43,11 @@ interface InitConfig {
   security: {
     skip_permissions: boolean;
     warn_on_skip: boolean;
+    commands: {
+      allowed: string[];
+      blocked: string[];
+      strict: boolean;
+    };
   };
 }
 
@@ -180,6 +186,7 @@ async function runInit(
   logger.updateSpinner('Creating configuration...');
 
   const config: InitConfig = {
+    framework: 'aidf',
     version: '1.0',
     project: {
       name: answers.projectName,
@@ -197,11 +204,32 @@ async function runInit(
     security: {
       skip_permissions: true,
       warn_on_skip: true,
+      commands: {
+        allowed: ['pnpm test', 'pnpm lint', 'pnpm typecheck', 'pnpm build'],
+        blocked: ['rm -rf /', 'sudo'],
+        strict: false,
+      },
     },
   };
 
   const configPath = join(aiDir, 'config.yml');
-  writeFileSync(configPath, YAML.stringify(config));
+  const configHeader = `# AIDF (AI Development Framework) Configuration
+# Framework docs: https://rubenmavarezb.github.io/aidf/docs/concepts/
+#
+# AIDF provides structured, layered context for AI assistants:
+#   Layer 1: AGENTS.md (global project context)
+#   Layer 2: roles/*.md (specialized role definitions)
+#   Layer 3: skills/*.md (portable skill definitions)
+#   Layer 4: tasks/*.md (scoped task specifications)
+#   Layer 5: plans/*.md (multi-task initiatives)
+#
+# For sensitive values, use environment variables:
+#   api_key: \${ANTHROPIC_API_KEY}
+#   webhook_url: \${AIDF_SLACK_WEBHOOK}
+# Environment variables are resolved at runtime using \${VAR} or $VAR syntax.
+
+`;
+  writeFileSync(configPath, configHeader + YAML.stringify(config));
 
   // Step 7: Ensure tasks/ and plans/ directories exist
   const tasksDir = join(aiDir, 'tasks');
@@ -306,6 +334,7 @@ function updateGitignore(projectPath: string): void {
 .ai/tasks/*.log
 .ai/tasks/*.tmp
 .ai/.cache/
+.ai/config.local.yml
 `;
 
   if (existsSync(gitignorePath)) {
@@ -349,6 +378,7 @@ function printNextSteps(
   }
 
   console.log(chalk.gray('Files created:'));
+  console.log(chalk.gray('  .ai/README.md      - Framework quick start'));
   console.log(chalk.gray('  .ai/AGENTS.md      - Project context'));
   console.log(chalk.gray('  .ai/config.yml     - AIDF configuration'));
   console.log(chalk.gray('  .ai/roles/         - Role definitions'));

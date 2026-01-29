@@ -4,7 +4,7 @@ import { readFile, readdir, stat } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
-import type { SkillMetadata, SkillInfo, LoadedSkill, SkillsConfig } from '../types/index.js';
+import type { SkillMetadata, SkillInfo, LoadedSkill, SkillsConfig, SecurityWarning } from '../types/index.js';
 
 /**
  * Parses the YAML-like frontmatter from a SKILL.md file.
@@ -112,6 +112,178 @@ function escapeXml(str: string): string {
     .replace(/"/g, '&quot;');
 }
 
+/**
+ * Strips fenced code blocks from content for pattern matching.
+ * Returns content with code blocks replaced by empty lines to preserve line numbers.
+ */
+function stripCodeBlocks(content: string): string {
+  return content.replace(/```[\s\S]*?```/g, (match) => {
+    // Replace with same number of newlines to preserve line numbering
+    const lineCount = match.split('\n').length - 1;
+    return '\n'.repeat(lineCount);
+  });
+}
+
+interface SecurityPattern {
+  regex: RegExp;
+  level: 'warning' | 'danger';
+  pattern: string;
+  description: string;
+  /** If true, check against content with code blocks stripped */
+  stripCode?: boolean;
+}
+
+const SECURITY_PATTERNS: SecurityPattern[] = [
+  // === Danger patterns (potentially malicious) ===
+  {
+    regex: /ignore\s+(previous|above|all\s+previous)\s+instructions/i,
+    level: 'danger',
+    pattern: 'ignore previous instructions',
+    description: 'Prompt injection attempt: tries to override previous instructions',
+  },
+  {
+    regex: /\bdisregard\b.*\b(instructions|rules|above|previous)\b/i,
+    level: 'danger',
+    pattern: 'disregard instructions',
+    description: 'Prompt injection attempt: tries to disregard existing instructions',
+  },
+  {
+    regex: /\byou\s+are\s+now\b/i,
+    level: 'danger',
+    pattern: 'you are now',
+    description: 'Role override attempt: tries to change AI identity mid-prompt',
+  },
+  {
+    regex: /^\s*system\s*:/im,
+    level: 'danger',
+    pattern: 'system:',
+    description: 'System prompt injection: attempts to inject system-level instructions',
+  },
+  {
+    regex: /<system>/i,
+    level: 'danger',
+    pattern: '<system>',
+    description: 'System prompt injection: attempts to inject system-level XML block',
+  },
+  {
+    regex: /\beval\s*\(/,
+    level: 'danger',
+    pattern: 'eval(',
+    description: 'Code execution: eval() in instructions (outside code blocks)',
+    stripCode: true,
+  },
+  {
+    regex: /\bexec\s*\(/,
+    level: 'danger',
+    pattern: 'exec(',
+    description: 'Code execution: exec() in instructions (outside code blocks)',
+    stripCode: true,
+  },
+  {
+    regex: /\bFunction\s*\(/,
+    level: 'danger',
+    pattern: 'Function(',
+    description: 'Code execution: Function constructor in instructions (outside code blocks)',
+    stripCode: true,
+  },
+  {
+    regex: /[A-Za-z0-9+/]{60,}={0,2}/,
+    level: 'danger',
+    pattern: 'base64 encoded content',
+    description: 'Encoded content: possible base64-encoded payload detected',
+    stripCode: true,
+  },
+  {
+    regex: /(?:0x[0-9a-fA-F]{2}[\s,]*){20,}/,
+    level: 'danger',
+    pattern: 'hex string',
+    description: 'Encoded content: long hex string detected, possible obfuscated payload',
+    stripCode: true,
+  },
+
+  // === Warning patterns (suspicious but may be legitimate) ===
+  {
+    regex: /\bsudo\b/i,
+    level: 'warning',
+    pattern: 'sudo',
+    description: 'Elevated privileges: sudo command found in instructions',
+    stripCode: true,
+  },
+  {
+    regex: /\bchmod\b/i,
+    level: 'warning',
+    pattern: 'chmod',
+    description: 'Permission change: chmod command found in instructions',
+    stripCode: true,
+  },
+  {
+    regex: /\bchown\b/i,
+    level: 'warning',
+    pattern: 'chown',
+    description: 'Ownership change: chown command found in instructions',
+    stripCode: true,
+  },
+  {
+    regex: /https?:\/\/[^\s)>\]]+/i,
+    level: 'warning',
+    pattern: 'external URL',
+    description: 'External URL: link to external domain found in instructions',
+    stripCode: true,
+  },
+  {
+    regex: /(?:^|\s)\.env\b|\/etc\/|~\/\.ssh/,
+    level: 'warning',
+    pattern: 'sensitive file path',
+    description: 'Sensitive path: instructions reference sensitive files (.env, /etc/, ~/.ssh)',
+    stripCode: true,
+  },
+  {
+    regex: /--dangerously/,
+    level: 'warning',
+    pattern: '--dangerously flag',
+    description: 'Dangerous flag: --dangerously flag found in instructions',
+    stripCode: true,
+  },
+  {
+    regex: /\brm\s+-rf\b/,
+    level: 'warning',
+    pattern: 'rm -rf',
+    description: 'Destructive command: rm -rf found in instructions',
+    stripCode: true,
+  },
+];
+
+/**
+ * Validates a SKILL.md content string for security concerns.
+ * Returns an array of security warnings (empty = no concerns).
+ */
+export function validateSkillSecurity(content: string): SecurityWarning[] {
+  const warnings: SecurityWarning[] = [];
+  const lines = content.split('\n');
+  const strippedContent = stripCodeBlocks(content);
+  const strippedLines = strippedContent.split('\n');
+
+  for (const pattern of SECURITY_PATTERNS) {
+    const searchLines = pattern.stripCode ? strippedLines : lines;
+
+    for (let i = 0; i < searchLines.length; i++) {
+      const line = searchLines[i];
+      if (pattern.regex.test(line)) {
+        warnings.push({
+          level: pattern.level,
+          pattern: pattern.pattern,
+          description: pattern.description,
+          line: i + 1,
+        });
+        // Only report each pattern once (first occurrence)
+        break;
+      }
+    }
+  }
+
+  return warnings;
+}
+
 export class SkillLoader {
   private projectRoot: string;
   private config: SkillsConfig;
@@ -150,6 +322,8 @@ export class SkillLoader {
 
   /**
    * Loads all discovered skills (reads their content).
+   * Runs security validation on each skill and stores warnings.
+   * If block_suspicious is true, skills with danger-level warnings are excluded.
    */
   async loadAll(): Promise<LoadedSkill[]> {
     if (this.config.enabled === false) return [];
@@ -159,7 +333,34 @@ export class SkillLoader {
 
     for (const info of infos) {
       const content = await readFile(info.path, 'utf-8');
-      loaded.push({ ...info, content });
+      const warnings = validateSkillSecurity(content);
+      const skill: LoadedSkill = { ...info, content, warnings: warnings.length > 0 ? warnings : undefined };
+
+      if (warnings.length > 0) {
+        const dangerWarnings = warnings.filter(w => w.level === 'danger');
+        const warnWarnings = warnings.filter(w => w.level === 'warning');
+
+        if (dangerWarnings.length > 0) {
+          console.warn(`⚠ Skill "${info.name}" has ${dangerWarnings.length} security concern(s):`);
+          for (const w of dangerWarnings) {
+            console.warn(`  [DANGER] ${w.description}${w.line ? ` (line ${w.line})` : ''}`);
+          }
+
+          if (this.config.block_suspicious) {
+            console.warn(`  Skill "${info.name}" blocked (block_suspicious is enabled)`);
+            continue;
+          }
+        }
+
+        if (warnWarnings.length > 0) {
+          console.warn(`⚠ Skill "${info.name}" has ${warnWarnings.length} warning(s):`);
+          for (const w of warnWarnings) {
+            console.warn(`  [WARNING] ${w.description}${w.line ? ` (line ${w.line})` : ''}`);
+          }
+        }
+      }
+
+      loaded.push(skill);
     }
 
     return loaded;

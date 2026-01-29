@@ -1,7 +1,7 @@
 // packages/cli/src/utils/files.ts
 
-import { existsSync, readdirSync, mkdirSync, copyFileSync, readFileSync, writeFileSync } from 'fs';
-import { join, dirname } from 'path';
+import { existsSync, readdirSync, mkdirSync, copyFileSync, readFileSync, writeFileSync, renameSync } from 'fs';
+import { join, dirname, basename } from 'path';
 import { fileURLToPath } from 'url';
 
 /**
@@ -154,4 +154,44 @@ export function getProjectName(projectPath: string): string | null {
   } catch {
     return null;
   }
+}
+
+const STATUS_FOLDERS = ['pending', 'completed', 'blocked'] as const;
+export type TaskStatus = (typeof STATUS_FOLDERS)[number];
+
+/**
+ * Moves a task file between status folders (pending/completed/blocked).
+ * If the file is not in a recognized status folder, does nothing (backward compatible).
+ * Creates the target folder if it doesn't exist.
+ * Returns the new path if moved, or the original path if not moved.
+ */
+export function moveTaskFile(taskPath: string, targetStatus: TaskStatus): string {
+  const dir = dirname(taskPath);
+  const currentFolder = basename(dir);
+  const fileName = basename(taskPath);
+
+  // Only move if file is currently in a recognized status folder
+  if (!STATUS_FOLDERS.includes(currentFolder as TaskStatus)) {
+    return taskPath;
+  }
+
+  // Already in the target folder
+  if (currentFolder === targetStatus) {
+    return taskPath;
+  }
+
+  // Build target path: go up from current status folder, then into target status folder
+  const tasksDir = dirname(dir);
+  const targetDir = join(tasksDir, targetStatus);
+
+  // Create target folder if it doesn't exist
+  if (!existsSync(targetDir)) {
+    mkdirSync(targetDir, { recursive: true });
+  }
+
+  const targetPath = join(targetDir, fileName);
+
+  renameSync(taskPath, targetPath);
+
+  return targetPath;
 }

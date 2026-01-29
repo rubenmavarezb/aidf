@@ -1,7 +1,7 @@
 // packages/cli/src/commands/task.ts
 
 import { Command } from 'commander';
-import { existsSync } from 'fs';
+import { existsSync, mkdirSync } from 'fs';
 import { readFile, writeFile, readdir } from 'fs/promises';
 import { join, basename } from 'path';
 import inquirer from 'inquirer';
@@ -406,12 +406,21 @@ async function createTaskFile(
 ): Promise<string> {
   const tasksDir = join(projectRoot, '.ai', 'tasks');
 
-  // Generar número de task
-  const existingTasks = await readdir(tasksDir).catch(() => []);
-  const taskNumbers = existingTasks
-    .map(f => parseInt(f.match(/^(\d+)-/)?.[1] || '0', 10))
-    .filter(n => !isNaN(n));
-  const nextNumber = Math.max(0, ...taskNumbers) + 1;
+  // Scan all subfolders for task numbering
+  const allTaskNumbers: number[] = [];
+  const dirsToScan = [tasksDir];
+  for (const sub of ['pending', 'completed', 'blocked']) {
+    const subDir = join(tasksDir, sub);
+    if (existsSync(subDir)) dirsToScan.push(subDir);
+  }
+  for (const dir of dirsToScan) {
+    const files = await readdir(dir).catch(() => []);
+    for (const f of files) {
+      const match = f.match(/^(\d+)-/);
+      if (match) allTaskNumbers.push(parseInt(match[1], 10));
+    }
+  }
+  const nextNumber = Math.max(0, ...allTaskNumbers) + 1;
   const paddedNumber = String(nextNumber).padStart(3, '0');
 
   // Generar slug del goal
@@ -422,7 +431,22 @@ async function createTaskFile(
     .slice(0, 30);
 
   const fileName = `${paddedNumber}-${slug}.md`;
-  const filePath = join(tasksDir, fileName);
+
+  // Place in pending/ subfolder if it exists, otherwise in tasks/
+  const pendingDir = join(tasksDir, 'pending');
+  let targetDir = tasksDir;
+  if (existsSync(pendingDir)) {
+    targetDir = pendingDir;
+  } else {
+    // Create pending/ for new projects using subfolder structure
+    try {
+      mkdirSync(pendingDir, { recursive: true });
+      targetDir = pendingDir;
+    } catch {
+      // Fallback to tasks/ root
+    }
+  }
+  const filePath = join(targetDir, fileName);
 
   // If template was used, try to preserve more of its structure
   let requirementsContent = answers.requirements;
@@ -487,37 +511,61 @@ async function listTasks(projectRoot: string, includeAll: boolean): Promise<Task
   const tasksDir = join(projectRoot, '.ai', 'tasks');
   const tasks: TaskInfo[] = [];
 
-  try {
-    const files = await readdir(tasksDir);
-    for (const file of files.filter(f => f.endsWith('.md'))) {
-      const filePath = join(tasksDir, file);
-      const content = await readFile(filePath, 'utf-8');
+  /**
+   * Scan a directory for task .md files and add them to the tasks array.
+   * If folderStatus is provided, use it as the status (derived from folder name).
+   */
+  async function scanDir(dir: string, folderStatus?: TaskInfo['status']): Promise<void> {
+    if (!existsSync(dir)) return;
 
-      let status: TaskInfo['status'] = 'pending';
-      if (content.includes('## Status: ⚠️ BLOCKED') || content.includes('Status: BLOCKED')) {
-        status = 'blocked';
-      } else if (content.includes('## Status: ✅') || content.includes('Status: COMPLETED')) {
-        status = 'completed';
+    try {
+      const files = await readdir(dir);
+      for (const file of files.filter(f => f.endsWith('.md'))) {
+        const filePath = join(dir, file);
+        const content = await readFile(filePath, 'utf-8');
+
+        // Determine status: folder-based takes priority, then content-based
+        let status: TaskInfo['status'];
+        if (folderStatus) {
+          status = folderStatus;
+        } else {
+          status = 'pending';
+          if (content.includes('## Status: ⚠️ BLOCKED') || content.includes('Status: BLOCKED')) {
+            status = 'blocked';
+          } else if (content.includes('## Status: ✅') || content.includes('Status: COMPLETED')) {
+            status = 'completed';
+          }
+        }
+
+        if (!includeAll && status === 'completed') {
+          continue;
+        }
+
+        const goalMatch = content.match(/## Goal\n(.+)/);
+        const typeMatch = content.match(/## Task Type\n(\w+)/);
+
+        tasks.push({
+          path: filePath,
+          name: file,
+          goal: goalMatch?.[1] || 'No goal defined',
+          type: typeMatch?.[1] || 'unknown',
+          status,
+        });
       }
-
-      if (!includeAll && status === 'completed') {
-        continue;
-      }
-
-      const goalMatch = content.match(/## Goal\n(.+)/);
-      const typeMatch = content.match(/## Task Type\n(\w+)/);
-
-      tasks.push({
-        path: filePath,
-        name: file,
-        goal: goalMatch?.[1] || 'No goal defined',
-        type: typeMatch?.[1] || 'unknown',
-        status,
-      });
+    } catch {
+      // Ignore errors reading directory
     }
-  } catch {
-    // No tasks dir
   }
+
+  // Scan status subfolders first
+  await scanDir(join(tasksDir, 'pending'), 'pending');
+  await scanDir(join(tasksDir, 'blocked'), 'blocked');
+  if (includeAll) {
+    await scanDir(join(tasksDir, 'completed'), 'completed');
+  }
+
+  // Scan root tasks/ for backward compatibility (files not in subfolders)
+  await scanDir(tasksDir);
 
   return tasks.sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -529,28 +577,47 @@ function printTaskList(tasks: TaskInfo[], logger: Logger): void {
   }
 
   console.log('\n');
-  console.log(chalk.bold('Tasks:\n'));
 
-  for (const task of tasks) {
-    const statusIcon = {
-      pending: chalk.yellow('○'),
-      blocked: chalk.red('⚠'),
-      completed: chalk.green('✓'),
-    }[task.status];
+  const statusOrder: TaskInfo['status'][] = ['pending', 'blocked', 'completed'];
+  const statusLabels: Record<TaskInfo['status'], string> = {
+    pending: 'Pending',
+    blocked: 'Blocked',
+    completed: 'Completed',
+  };
+  const statusColors: Record<TaskInfo['status'], typeof chalk.yellow> = {
+    pending: chalk.yellow,
+    blocked: chalk.red,
+    completed: chalk.green,
+  };
 
-    const typeColor = {
-      component: chalk.blue,
-      refactor: chalk.magenta,
-      bugfix: chalk.red,
-      test: chalk.green,
-      docs: chalk.gray,
-      architecture: chalk.cyan,
-    }[task.type] || chalk.white;
+  for (const status of statusOrder) {
+    const group = tasks.filter(t => t.status === status);
+    if (group.length === 0) continue;
 
-    console.log(`  ${statusIcon} ${chalk.gray(task.name)}`);
-    console.log(`    ${task.goal.slice(0, 60)}${task.goal.length > 60 ? '...' : ''}`);
-    console.log(`    ${typeColor(task.type)} ${chalk.gray(`(${task.status})`)}`);
-    console.log('');
+    const colorFn = statusColors[status];
+    console.log(colorFn(`${statusLabels[status]} (${group.length}):\n`));
+
+    for (const task of group) {
+      const statusIcon = {
+        pending: chalk.yellow('○'),
+        blocked: chalk.red('⚠'),
+        completed: chalk.green('✓'),
+      }[task.status];
+
+      const typeColor = {
+        component: chalk.blue,
+        refactor: chalk.magenta,
+        bugfix: chalk.red,
+        test: chalk.green,
+        docs: chalk.gray,
+        architecture: chalk.cyan,
+      }[task.type] || chalk.white;
+
+      console.log(`  ${statusIcon} ${chalk.gray(task.name)}`);
+      console.log(`    ${task.goal.slice(0, 60)}${task.goal.length > 60 ? '...' : ''}`);
+      console.log(`    ${typeColor(task.type)}`);
+      console.log('');
+    }
   }
 }
 
