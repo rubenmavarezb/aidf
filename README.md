@@ -4,66 +4,80 @@
 [![npm version](https://img.shields.io/npm/v/aidf.svg)](https://www.npmjs.com/package/aidf)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-A framework for structured, consistent, and safe AI-assisted software development. Define context, roles, and scoped tasks — then let AI execute autonomously.
+**Structure your AI context. Automate your development tasks.**
+
+---
+
+## Two Ways to Use AIDF
+
+### 1. Context — Give any AI assistant structured project knowledge
+
+No automation required. Just run `aidf init` and get a `.ai/` folder with structured context that any AI tool can read.
+
+- Works with **Claude Code**, **Cursor**, **GitHub Copilot**, or any LLM
+- Defines project architecture, conventions, and boundaries in `AGENTS.md`
+- Provides specialized roles (developer, architect, tester, reviewer, documenter)
+- Scoped task templates keep AI focused on what matters
+
+### 2. Automation — Execute scoped tasks autonomously
+
+Run `aidf run` and let AI execute tasks in an iterative loop with built-in safety.
+
+- Iterative execution with scope enforcement and validation
+- Auto-commit after each iteration, auto-PR on completion
+- Live progress bar with elapsed time, token tracking, and ETA
+- Parallel task execution with dependency detection
+- Watch mode for CI/CD pipelines
+- Resume blocked tasks with preserved context
+- Desktop, Slack, Discord, and email notifications
+
+---
 
 ## Quick Start
 
 ```bash
-# Install the CLI
 npm install -g aidf
 
-# Initialize AIDF in your project
 cd your-project
-aidf init
-
-# Create your first task
-aidf task new
-
-# Run it autonomously
-aidf run .ai/tasks/001-my-task.md
-```
-
-## What is AIDF?
-
-AIDF treats AI as a **team member** that needs structure to be effective:
-
-| Layer | Purpose | File |
-|-------|---------|------|
-| **Context** | Project understanding | `.ai/AGENTS.md` |
-| **Roles** | Specialized personas | `.ai/roles/*.md` |
-| **Tasks** | Scoped, executable prompts | `.ai/tasks/*.md` |
-| **Plans** | Multi-task initiatives | `.ai/plans/*.md` |
-
-### Without AIDF
-
-```
-Developer: "Add a login form"
-AI: Creates random structure, inconsistent with project
-Developer: Spends time fixing and adapting
-```
-
-### With AIDF
-
-```
-Developer: aidf run .ai/tasks/add-login-form.md
-AI: Follows project conventions, respects boundaries, auto-commits
-Developer: Reviews and merges
+aidf init            # Create .ai/ folder with context and templates
+aidf task create     # Create a task interactively
+aidf run             # Execute the first pending task
 ```
 
 ## CLI Commands
 
-| Command | Description |
-|---------|-------------|
-| `aidf init` | Initialize `.ai/` folder with templates |
-| `aidf task new` | Create a task interactively |
-| `aidf task list` | List all tasks with status |
-| `aidf run <task>` | Execute a task autonomously |
-| `aidf run --resume` | Resume a blocked task |
-| `aidf status` | Project dashboard with stats |
+| Command | Description | Key Flags |
+|---------|-------------|-----------|
+| `aidf init` | Initialize `.ai/` folder with templates | `--yes`, `--force` |
+| `aidf run [tasks...]` | Execute tasks autonomously | `--parallel`, `--resume`, `--auto-pr`, `--quiet`, `--dry-run` |
+| `aidf task create` | Create a task interactively | `--template <name>` |
+| `aidf task list` | List all tasks with status | `--all` |
+| `aidf task status [task]` | Show task details | |
+| `aidf watch` | Auto-execute on new/modified tasks | `--debounce <ms>`, `--daemon` |
+| `aidf status` | Project dashboard with stats | `--json` |
+| `aidf hooks install` | Install git hooks | `--husky`, `--pre-commit`, `--force` |
+| `aidf hooks uninstall` | Remove AIDF git hooks | |
 
-## Task Examples
+All commands support `--log-format <text|json>`, `--log-file <path>`, and `--log-rotate`.
 
-### Bug Fix
+## How It Works
+
+```
+aidf init → .ai/ folder → aidf task create → aidf run → AI executes → validates → commits
+```
+
+AIDF uses 4 layers of context that travel with your project:
+
+| Layer | Purpose | Location |
+|-------|---------|----------|
+| **AGENTS.md** | Project overview, architecture, conventions, boundaries | `.ai/AGENTS.md` |
+| **Roles** | Specialized AI personas with defined expertise | `.ai/roles/*.md` |
+| **Tasks** | Scoped, executable prompts with clear boundaries | `.ai/tasks/*.md` |
+| **Plans** | Multi-task initiatives grouping related work | `.ai/plans/*.md` |
+
+The execution loop works iteratively: the AI reads context, makes changes, validates against scope rules, runs validation commands (lint, typecheck, test), and commits — repeating until all Definition of Done criteria are met or the task is blocked.
+
+## Task Example
 
 ```markdown
 # TASK: Fix login timeout
@@ -99,88 +113,6 @@ bugfix
 - [ ] `pnpm test` passes
 ```
 
-### New Feature
-
-```markdown
-# TASK: Add dark mode
-
-## Goal
-Implement dark mode toggle with system preference detection.
-
-## Task Type
-component
-
-## Suggested Roles
-- developer
-
-## Scope
-### Allowed
-- src/components/ThemeToggle/**
-- src/hooks/useTheme.ts
-- src/styles/themes/**
-
-### Forbidden
-- src/api/**
-- package.json
-
-## Requirements
-- Toggle component with sun/moon icons
-- Persist preference in localStorage
-- Detect system preference on first visit
-- Smooth CSS transition between themes
-
-## Definition of Done
-- [ ] Toggle switches between light and dark
-- [ ] Preference persists across sessions
-- [ ] System preference detected on first visit
-- [ ] No flash of wrong theme on page load
-- [ ] `pnpm test` passes
-```
-
-### Refactor
-
-```markdown
-# TASK: Extract auth middleware
-
-## Goal
-Refactor inline auth checks into a reusable middleware.
-
-## Task Type
-refactor
-
-## Suggested Roles
-- architect
-- developer
-
-## Scope
-### Allowed
-- src/middleware/auth.ts (new)
-- src/api/routes/*.ts
-- tests/middleware/auth.test.ts (new)
-
-### Forbidden
-- src/database/**
-- src/config/**
-
-## Requirements
-### Current State
-Auth checks duplicated across 12 route handlers.
-
-### Target State
-Single `requireAuth()` middleware applied to protected routes.
-
-### Constraints
-- No API behavior changes
-- All existing tests must pass
-
-## Definition of Done
-- [ ] Middleware extracts and validates JWT
-- [ ] All 12 routes use the middleware
-- [ ] No duplicated auth logic remains
-- [ ] Existing tests pass unchanged
-- [ ] `pnpm test` passes
-```
-
 ## Configuration
 
 Create `.ai/config.yml` to customize behavior:
@@ -198,10 +130,10 @@ execution:
   timeout_per_iteration: 300 # seconds
 
 permissions:
-  scope_enforcement: strict  # strict | ask | warn
-  auto_commit: true          # commit after each iteration
-  auto_push: false           # push after completion
-  auto_pr: false             # create PR after completion
+  scope_enforcement: strict  # strict | ask | permissive
+  auto_commit: true
+  auto_push: false
+  auto_pr: false
 
 validation:
   pre_commit:
@@ -209,19 +141,34 @@ validation:
     - pnpm typecheck
   pre_push:
     - pnpm test
+  pre_pr:
+    - pnpm test
 
 git:
   commit_prefix: "aidf:"
   branch_prefix: "aidf/"
+
+notifications:
+  level: all               # all | errors | blocked
+  desktop:
+    enabled: true
+  slack:
+    enabled: false
+    webhook_url: ""
+  discord:
+    enabled: false
+    webhook_url: ""
 ```
 
 ## AI Providers
 
-| Provider | How it works | Setup |
-|----------|-------------|-------|
-| **claude-cli** (default) | Uses Claude Code CLI | Install [Claude Code](https://claude.ai/code) |
-| **anthropic-api** | Direct API with tool calling | Set `ANTHROPIC_API_KEY` |
-| **openai-api** | OpenAI API with tool calling | Set `OPENAI_API_KEY` |
+| Provider | How it works | Setup | Token Tracking |
+|----------|-------------|-------|----------------|
+| **claude-cli** (default) | Spawns Claude Code CLI | Install [Claude Code](https://claude.ai/code) | No |
+| **anthropic-api** | Direct API with tool calling | Set `ANTHROPIC_API_KEY` | Yes |
+| **openai-api** | OpenAI API with tool calling | Set `OPENAI_API_KEY` | Yes |
+
+API providers (anthropic-api, openai-api) include built-in file operation tools: read/write files, list directory contents, run commands, and signal task completion or blocking.
 
 ## Project Structure
 
@@ -242,10 +189,12 @@ git:
 │   ├── TASK.template.md
 │   ├── PLAN.template.md
 │   └── tasks/             # Task type templates
-│       ├── new-feature.template.md
 │       ├── bug-fix.template.md
+│       ├── new-feature.template.md
 │       ├── refactor.template.md
-│       └── ...
+│       ├── test-coverage.template.md
+│       ├── documentation.template.md
+│       └── dependency-update.template.md
 │
 ├── tasks/                 # Active tasks
 │   └── 001-my-task.md
@@ -253,6 +202,21 @@ git:
 └── plans/                 # Multi-task initiatives
     └── my-plan/
 ```
+
+## Features
+
+- **Live progress bar** — Iteration count, percentage, elapsed time, token usage, ETA
+- **Parallel execution** — Run multiple tasks concurrently with `--parallel` and `--concurrency <n>`
+- **Watch mode** — Monitor `.ai/tasks/` for new or modified tasks and auto-execute
+- **Scope enforcement** — Strict, ask, or permissive modes to control out-of-scope changes
+- **Auto-commit & auto-PR** — Commit after each iteration, create PR on completion
+- **Resume blocked tasks** — Preserve context and retry with `--resume`
+- **Git hooks** — Pre-commit (scope validation), commit-msg (conventional commits), pre-push (validation commands)
+- **Notifications** — Desktop, Slack, Discord, and email alerts for completed/failed/blocked tasks
+- **Task templates** — Bug fix, new feature, refactor, test coverage, documentation, dependency update
+- **Structured logging** — Text or JSON format, file output with optional rotation
+- **Dry run mode** — Simulate execution without making changes
+- **Multiple providers** — Claude CLI, Anthropic API, OpenAI API with token tracking
 
 ## Troubleshooting
 
@@ -266,26 +230,23 @@ Use `aidf run --resume .ai/tasks/blocked-task.md` after fixing the blocking issu
 Check that Claude Code is installed (`claude --version`) or that your API key is set (`ANTHROPIC_API_KEY` or `OPENAI_API_KEY`).
 
 **Scope violation errors**
-The task's `Scope > Forbidden` paths are being modified. Either update the scope or fix the AI's approach.
+The task's `Scope > Forbidden` paths are being modified. Either update the scope or fix the AI's approach. Set `scope_enforcement: permissive` in config to allow all changes with warnings only.
+
+**Watch mode not detecting tasks**
+Ensure task files are in `.ai/tasks/` and have the `.md` extension. Check `--debounce` setting if changes are firing too quickly.
+
+**Git hooks not running**
+Run `aidf hooks install` again. If using Husky, add `--husky` flag. Check that `.git/hooks/` files are executable.
 
 ## Documentation
 
-- [Core Concepts](./docs/concepts.md) - Understanding AIDF principles
-- [Setup Guide](./docs/setup.md) - Integrating AIDF into your project
-- [Writing AGENTS.md](./docs/agents-file.md) - Creating effective context documents
-- [Defining Roles](./docs/roles.md) - Creating specialized AI personas
-- [Task Design](./docs/tasks.md) - Writing effective task prompts
-- [Best Practices](./docs/best-practices.md) - Patterns that work
-- [Integrations](./docs/integrations.md) - Claude Code, Cursor, GitHub Copilot
-
-## Compatibility
-
-AIDF works with any AI assistant:
-
-- **[Claude Code](https://claude.ai/code)** - Full autonomous execution
-- **Cursor** - Rules template included
-- **GitHub Copilot** - Instructions template
-- **Any LLM** - Prompt templates for API usage
+- [Core Concepts](./docs/concepts.md) — Understanding AIDF principles
+- [Setup Guide](./docs/setup.md) — Integrating AIDF into your project
+- [Writing AGENTS.md](./docs/agents-file.md) — Creating effective context documents
+- [Defining Roles](./docs/roles.md) — Creating specialized AI personas
+- [Task Design](./docs/tasks.md) — Writing effective task prompts
+- [Best Practices](./docs/best-practices.md) — Patterns that work
+- [Integrations](./docs/integrations.md) — Claude Code, Cursor, GitHub Copilot
 
 ## License
 
