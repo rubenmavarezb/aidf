@@ -121,6 +121,15 @@ export class Executor {
       this.log(`Role: ${context.role.name}`);
       this.log(`Scope: ${context.task.scope.allowed.join(', ')}`);
 
+      // Security warning for skip_permissions
+      const skipPermissions = this.config.security?.skip_permissions ?? true;
+      const warnOnSkip = this.config.security?.warn_on_skip ?? true;
+      if (skipPermissions && warnOnSkip) {
+        this.logger.warn(
+          'Running with --dangerously-skip-permissions. The AI agent has unrestricted access to your filesystem and commands. Set security.skip_permissions: false in config.yml to require permission prompts.'
+        );
+      }
+
       // Crear scope guard
       const scopeGuard = new ScopeGuard(
         context.task.scope,
@@ -167,11 +176,11 @@ export class Executor {
 
         this.emitPhase('Executing AI');
 
-        // For claude-cli, always skip its built-in permissions since we have our own ScopeGuard
+        // For claude-cli, conditionally skip permissions based on security config
         // For API providers, this flag is ignored anyway
         const result = await this.provider.execute(prompt, {
           timeout: this.options.timeoutPerIteration * 1000,
-          dangerouslySkipPermissions: true,
+          dangerouslySkipPermissions: skipPermissions,
           onOutput: this.options.onOutput,
         });
 

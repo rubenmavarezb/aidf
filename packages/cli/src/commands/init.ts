@@ -39,6 +39,10 @@ interface InitConfig {
     autoCommit: boolean;
   };
   validation: DetectedCommands;
+  security: {
+    skip_permissions: boolean;
+    warn_on_skip: boolean;
+  };
 }
 
 const PROJECT_TYPES = [
@@ -190,6 +194,10 @@ async function runInit(
       autoCommit: answers.autoCommit,
     },
     validation: detectedCommands,
+    security: {
+      skip_permissions: true,
+      warn_on_skip: true,
+    },
   };
 
   const configPath = join(aiDir, 'config.yml');

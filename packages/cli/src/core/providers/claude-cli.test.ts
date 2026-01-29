@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ClaudeCliProvider, buildIterationPrompt } from './claude-cli.js';
+import { spawn } from 'child_process';
 
 // Mock child_process for tests without real Claude CLI
 vi.mock('child_process', () => ({
@@ -42,6 +43,44 @@ describe('ClaudeCliProvider', () => {
     it('should use provided cwd', () => {
       const customProvider = new ClaudeCliProvider('/custom/path');
       expect(customProvider.name).toBe('claude-cli');
+    });
+  });
+
+  describe('execute', () => {
+    it('should include --dangerously-skip-permissions when option is true', async () => {
+      // Execute with dangerouslySkipPermissions: true
+      provider.execute('test prompt', { dangerouslySkipPermissions: true });
+
+      // spawn is called twice: once for git status (detectChangedFiles), once for claude
+      // The second call should be the claude execution
+      const spawnMock = spawn as unknown as ReturnType<typeof vi.fn>;
+      const claudeCall = spawnMock.mock.calls.find(
+        (call: unknown[]) => call[0] === 'claude'
+      );
+      expect(claudeCall).toBeDefined();
+      expect(claudeCall![1]).toContain('--dangerously-skip-permissions');
+    });
+
+    it('should not include --dangerously-skip-permissions when option is false', async () => {
+      provider.execute('test prompt', { dangerouslySkipPermissions: false });
+
+      const spawnMock = spawn as unknown as ReturnType<typeof vi.fn>;
+      const claudeCall = spawnMock.mock.calls.find(
+        (call: unknown[]) => call[0] === 'claude'
+      );
+      expect(claudeCall).toBeDefined();
+      expect(claudeCall![1]).not.toContain('--dangerously-skip-permissions');
+    });
+
+    it('should not include --dangerously-skip-permissions by default', async () => {
+      provider.execute('test prompt');
+
+      const spawnMock = spawn as unknown as ReturnType<typeof vi.fn>;
+      const claudeCall = spawnMock.mock.calls.find(
+        (call: unknown[]) => call[0] === 'claude'
+      );
+      expect(claudeCall).toBeDefined();
+      expect(claudeCall![1]).not.toContain('--dangerously-skip-permissions');
     });
   });
 
