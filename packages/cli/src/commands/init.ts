@@ -32,7 +32,7 @@ interface InitConfig {
     description: string;
   };
   provider: {
-    default: string;
+    type: string;
   };
   behavior: {
     scopeEnforcement: string;
@@ -182,7 +182,7 @@ async function runInit(
       description: answers.projectDescription,
     },
     provider: {
-      default: answers.provider,
+      type: answers.provider,
     },
     behavior: {
       scopeEnforcement: answers.scopeEnforcement,
