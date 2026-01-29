@@ -1,6 +1,6 @@
 {
   "name": "aidf",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "description": "AI-Integrated Development Framework CLI",
   "type": "module",
   "bin": {
