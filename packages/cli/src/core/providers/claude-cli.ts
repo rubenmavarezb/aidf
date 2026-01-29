@@ -1,5 +1,7 @@
 import { spawn } from 'child_process';
 import type { Provider, ExecutionResult, ProviderOptions } from './types.js';
+import type { LoadedSkill } from '../../types/index.js';
+import { generateSkillsXml } from '../skill-loader.js';
 
 /**
  * Detects changed files using git status
@@ -175,6 +177,7 @@ export function buildIterationPrompt(context: {
   role: string;
   task: string;
   plan?: string;
+  skills?: LoadedSkill[];
   previousOutput?: string;
   iteration: number;
   blockingContext?: {
@@ -223,6 +226,12 @@ export function buildIterationPrompt(context: {
   if (context.plan) {
     prompt += `## Implementation Plan\n\n`;
     prompt += context.plan;
+    prompt += '\n\n';
+  }
+
+  if (context.skills && context.skills.length > 0) {
+    prompt += `## Available Skills\n\n`;
+    prompt += generateSkillsXml(context.skills);
     prompt += '\n\n';
   }
 
