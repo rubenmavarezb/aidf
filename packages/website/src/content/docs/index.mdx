@@ -1,0 +1,51 @@
+---
+title: AIDF — AI-Integrated Development Framework
+description: Structure your AI context. Automate your development tasks.
+template: splash
+hero:
+  tagline: Structure your AI context. Automate your development tasks.
+  actions:
+    - text: Get Started
+      link: /aidf/docs/concepts/
+      icon: right-arrow
+      variant: primary
+    - text: View on GitHub
+      link: https://github.com/rubenmavarezb/aidf
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+## Why AIDF?
+
+AI assistants are powerful but context-blind. They don't know your architecture, conventions, or boundaries. AIDF fixes that.
+
+<CardGrid>
+  <Card title="Structured Context" icon="document">
+    Define your project's architecture, conventions, and boundaries in a single `AGENTS.md` file that any AI assistant can understand.
+  </Card>
+  <Card title="Automated Execution" icon="rocket">
+    Run tasks autonomously with scope enforcement, validation, auto-commit, and real-time status tracking via the CLI.
+  </Card>
+  <Card title="Safety Built In" icon="approve-check-circle">
+    Explicit scope control prevents accidental changes. Forbidden paths, allowed paths, and Definition of Done criteria keep AI focused.
+  </Card>
+  <Card title="Tool Agnostic" icon="puzzle">
+    Works with Claude Code, Cursor, GitHub Copilot, or any LLM. The value is in the structured context, not the tool.
+  </Card>
+</CardGrid>
+
+## Quick Start
+
+```bash
+# Install the CLI
+npm install -g aidf
+
+# Initialize AIDF in your project
+aidf init
+
+# Create and run a task
+aidf task create "Add login form component"
+aidf run .ai/tasks/add-login-form.md
+```

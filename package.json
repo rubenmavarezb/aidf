@@ -7,7 +7,10 @@
     "build": "pnpm -r build",
     "test": "pnpm -r test",
     "lint": "pnpm -r lint",
-    "dev": "pnpm --filter @aidf/cli dev"
+    "dev": "pnpm --filter @aidf/cli dev",
+    "docs:dev": "pnpm --filter @aidf/website dev",
+    "docs:build": "pnpm --filter @aidf/website build",
+    "docs:preview": "pnpm --filter @aidf/website preview"
   },
   "devDependencies": {
     "typescript": "^5.5.0"
@@ -15,5 +18,11 @@
   "engines": {
     "node": ">=20.0.0"
   },
-  "packageManager": "pnpm@10.22.0"
+  "packageManager": "pnpm@10.22.0",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "sharp"
+    ]
+  }
 }
