@@ -10,6 +10,7 @@ import { createTaskCommand } from './commands/task.js';
 import { createStatusCommand } from './commands/status.js';
 import { createWatchCommand } from './commands/watch.js';
 import { createHooksCommand } from './commands/hooks.js';
+import { createSkillsCommand } from './commands/skills.js';
 
 // Read version from package.json
 const __filename = fileURLToPath(import.meta.url);
@@ -37,5 +38,6 @@ program.addCommand(createTaskCommand());
 program.addCommand(createStatusCommand());
 program.addCommand(createWatchCommand());
 program.addCommand(createHooksCommand());
+program.addCommand(createSkillsCommand());
 
 program.parse();

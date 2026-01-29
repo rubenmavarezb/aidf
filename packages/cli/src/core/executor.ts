@@ -90,7 +90,7 @@ export class Executor {
 
     try {
       // Cargar contexto
-      context = await loadContext(taskPath);
+      context = await loadContext(taskPath, this.config.skills);
       
       // Si estamos resumiendo, cargar estado bloqueado
       if (this.options.resume) {
@@ -150,6 +150,7 @@ export class Executor {
           role: context.role.raw,
           task: context.task.raw,
           plan: context.plan,
+          skills: context.skills,
           iteration: this.state.iteration,
           blockingContext: blockedStatus ? {
             previousIteration: blockedStatus.previousIteration,

@@ -3,7 +3,8 @@
 import { readFile } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join, dirname } from 'path';
-import type { LoadedContext, ParsedTask, ParsedRole, ParsedAgents, TaskScope, BlockedStatus } from '../types/index.js';
+import type { LoadedContext, ParsedTask, ParsedRole, ParsedAgents, TaskScope, BlockedStatus, SkillsConfig, LoadedSkill } from '../types/index.js';
+import { SkillLoader } from './skill-loader.js';
 
 export class ContextLoader {
   private aiDir: string;
@@ -29,14 +30,30 @@ export class ContextLoader {
   /**
    * Carga todo el contexto necesario para ejecutar una task
    */
-  async loadContext(taskPath: string): Promise<LoadedContext> {
+  async loadContext(taskPath: string, skillsConfig?: SkillsConfig): Promise<LoadedContext> {
     const task = await this.parseTask(taskPath);
     const roleName = task.suggestedRoles[0] || 'developer';
     const role = await this.parseRole(roleName);
     const agents = await this.parseAgents();
     const plan = await this.loadPlanIfExists();
 
-    return { agents, role, task, plan };
+    let skills: LoadedSkill[] | undefined;
+    if (skillsConfig?.enabled !== false) {
+      try {
+        const skillLoader = new SkillLoader(
+          this.aiDir.replace(/[/\\].ai$/, ''),
+          skillsConfig,
+        );
+        const loadedSkills = await skillLoader.loadAll();
+        if (loadedSkills.length > 0) {
+          skills = loadedSkills;
+        }
+      } catch {
+        // Skills are optional — don't fail context loading
+      }
+    }
+
+    return { agents, role, task, plan, skills };
   }
 
   /**
@@ -303,11 +320,11 @@ export class ContextLoader {
   }
 }
 
-export async function loadContext(taskPath: string): Promise<LoadedContext> {
+export async function loadContext(taskPath: string, skillsConfig?: SkillsConfig): Promise<LoadedContext> {
   const projectRoot = ContextLoader.findAiDir();
   if (!projectRoot) {
     throw new Error('No .ai directory found. Run `aidf init` first.');
   }
   const loader = new ContextLoader(projectRoot);
-  return loader.loadContext(taskPath);
+  return loader.loadContext(taskPath, skillsConfig);
 }
