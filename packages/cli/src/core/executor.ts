@@ -171,6 +171,15 @@ export class Executor {
           dangerouslySkipPermissions: true,
         });
 
+        // Accumulate token usage from this iteration
+        if (result.tokenUsage) {
+          if (!this.state.tokenUsage) {
+            this.state.tokenUsage = { inputTokens: 0, outputTokens: 0 };
+          }
+          this.state.tokenUsage.inputTokens += result.tokenUsage.inputTokens;
+          this.state.tokenUsage.outputTokens += result.tokenUsage.outputTokens;
+        }
+
         // Verificar scope violations
         if (result.filesChanged.length > 0) {
           const fileChanges = result.filesChanged.map(f => ({
@@ -304,6 +313,15 @@ export class Executor {
 
     this.state.completedAt = new Date();
 
+    // Write final status to task file for terminal states (completed/failed)
+    if (this.state.status === 'completed' || this.state.status === 'failed') {
+      try {
+        await this.updateTaskStatus(taskPath, this.state.status);
+      } catch {
+        // Ignore errors when updating task file (e.g., in tests)
+      }
+    }
+
     // Push si autoPush está habilitado
     if (this.options.autoPush && this.state.status === 'completed') {
       await this.git.push();
@@ -318,6 +336,7 @@ export class Executor {
       error: this.state.lastError,
       blockedReason: this.state.status === 'blocked' ? this.state.lastError : undefined,
       taskPath,
+      tokenUsage: this.state.tokenUsage,
     };
 
     try {
@@ -486,6 +505,62 @@ ${this.state.filesModified.map(f => `- \`${f}\``).join('\n') || '_None_'}
     await fs.writeFile(taskPath, updatedContent);
     
     this.log(`Updated resume attempt history with status: ${status}`);
+  }
+
+  /**
+   * Writes the final task status (COMPLETED/FAILED) to the task markdown file
+   */
+  private async updateTaskStatus(
+    taskPath: string,
+    status: 'completed' | 'failed'
+  ): Promise<void> {
+    const fs = await import('fs/promises');
+    const existingContent = await fs.readFile(taskPath, 'utf-8');
+
+    let statusSection: string;
+
+    const tokenLine = this.state.tokenUsage
+      ? `\n- **Tokens used:** ${(this.state.tokenUsage.inputTokens + this.state.tokenUsage.outputTokens).toLocaleString()} (input: ${this.state.tokenUsage.inputTokens.toLocaleString()} / output: ${this.state.tokenUsage.outputTokens.toLocaleString()})`
+      : '';
+
+    if (status === 'completed') {
+      statusSection = `## Status: ✅ COMPLETED
+
+### Execution Log
+- **Started:** ${this.state.startedAt?.toISOString()}
+- **Completed:** ${this.state.completedAt?.toISOString()}
+- **Iterations:** ${this.state.iteration}
+- **Files modified:** ${this.state.filesModified.length}${tokenLine}
+
+### Files Modified
+${this.state.filesModified.map(f => `- \`${f}\``).join('\n') || '_None_'}`;
+    } else {
+      statusSection = `## Status: ❌ FAILED
+
+### Execution Log
+- **Started:** ${this.state.startedAt?.toISOString()}
+- **Failed at:** ${this.state.completedAt?.toISOString()}
+- **Iterations:** ${this.state.iteration}${tokenLine}
+
+### Error
+\`\`\`
+${this.state.lastError || 'Unknown error'}
+\`\`\`
+
+### Files Modified
+${this.state.filesModified.map(f => `- \`${f}\``).join('\n') || '_None_'}`;
+    }
+
+    // Replace existing Status section or insert after Goal
+    const updatedContent = existingContent.includes('## Status:')
+      ? existingContent.replace(/## Status:[\s\S]*?(?=\n## (?!#)|$)/, statusSection)
+      : existingContent.replace(
+          /(## Goal\n[^\n]+\n)/,
+          `$1\n${statusSection}\n`
+        );
+
+    await fs.writeFile(taskPath, updatedContent);
+    this.log(`Updated task file with ${status.toUpperCase()} status`);
   }
 
   /**

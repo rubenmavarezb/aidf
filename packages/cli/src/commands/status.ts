@@ -296,7 +296,7 @@ export async function getProviderConfig(projectRoot: string): Promise<{ type: st
   try {
     const config = await loadConfig(projectRoot);
     return {
-      type: config.provider.type,
+      type: config.provider.type || (config.provider as Record<string, unknown>).default as string || 'claude-cli',
       model: config.provider.model,
     };
   } catch {

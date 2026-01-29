@@ -211,6 +211,7 @@ export interface ExecutorState {
   lastError?: string;
   filesModified: string[];
   validationResults: ValidationSummary[];
+  tokenUsage?: { inputTokens: number; outputTokens: number };
 }
 
 export interface ExecutorOptions {
@@ -236,6 +237,7 @@ export interface ExecutorResult {
   error?: string;
   blockedReason?: string;
   taskPath: string;
+  tokenUsage?: { inputTokens: number; outputTokens: number };
 }
 
 // === Status Command Types ===

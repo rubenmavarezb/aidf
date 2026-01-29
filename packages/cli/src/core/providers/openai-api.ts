@@ -45,6 +45,8 @@ export class OpenAiApiProvider implements Provider {
     let isBlocked = false;
     let blockReason = '';
     let fullOutput = '';
+    let totalInputTokens = 0;
+    let totalOutputTokens = 0;
 
     try {
       const tools = this.convertToolsToOpenAIFormat(FILE_TOOLS);
@@ -60,6 +62,10 @@ export class OpenAiApiProvider implements Provider {
           tools,
           messages,
         });
+
+        // Accumulate token usage
+        totalInputTokens += response.usage?.prompt_tokens ?? 0;
+        totalOutputTokens += response.usage?.completion_tokens ?? 0;
 
         const message = response.choices[0]?.message;
         if (!message) break;
@@ -103,6 +109,7 @@ export class OpenAiApiProvider implements Provider {
         filesChanged: this.toolHandler.getChangedFiles(),
         iterationComplete: isComplete,
         completionSignal: isComplete ? '<TASK_COMPLETE>' : undefined,
+        tokenUsage: { inputTokens: totalInputTokens, outputTokens: totalOutputTokens },
       };
     } catch (error) {
       return {
@@ -111,6 +118,9 @@ export class OpenAiApiProvider implements Provider {
         error: error instanceof Error ? error.message : 'Unknown error',
         filesChanged: this.toolHandler.getChangedFiles(),
         iterationComplete: false,
+        tokenUsage: totalInputTokens > 0 || totalOutputTokens > 0
+          ? { inputTokens: totalInputTokens, outputTokens: totalOutputTokens }
+          : undefined,
       };
     }
   }
