@@ -104,6 +104,15 @@ describe('NotificationService', () => {
       expect(svc.isEnabled()).toBe(true);
     });
 
+    it('returns true when webhook is enabled', () => {
+      const config: NotificationsConfig = {
+        level: 'all',
+        webhook: { enabled: true, url: 'https://example.com/hook' },
+      };
+      const svc = new NotificationService(config);
+      expect(svc.isEnabled()).toBe(true);
+    });
+
     it('returns true when email is enabled', () => {
       const config: NotificationsConfig = {
         level: 'all',
@@ -292,6 +301,76 @@ describe('NotificationService', () => {
     });
   });
 
+  describe('webhook channel', () => {
+    it('sends POST to URL with clean JSON payload', async () => {
+      const config: NotificationsConfig = {
+        level: 'all',
+        webhook: { enabled: true, url: 'https://n8n.example.com/webhook/aidf' },
+      };
+      const svc = new NotificationService(config);
+
+      await svc.notify(makeEvent('completed'));
+
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      const [url, options] = mockFetch.mock.calls[0];
+      expect(url).toBe('https://n8n.example.com/webhook/aidf');
+      expect(options.method).toBe('POST');
+      expect(options.headers['Content-Type']).toBe('application/json');
+
+      const body = JSON.parse(options.body);
+      expect(body.type).toBe('completed');
+      expect(body.task).toBe('test-task.md');
+      expect(body.iterations).toBe(5);
+      expect(body.filesModified).toBe(2);
+      expect(body.error).toBeNull();
+      expect(body.blockedReason).toBeNull();
+      expect(body.timestamp).toBeDefined();
+    });
+
+    it('includes custom headers when provided', async () => {
+      const config: NotificationsConfig = {
+        level: 'all',
+        webhook: {
+          enabled: true,
+          url: 'https://n8n.example.com/webhook/aidf',
+          headers: { 'Authorization': 'Bearer my-token' },
+        },
+      };
+      const svc = new NotificationService(config);
+
+      await svc.notify(makeEvent('completed'));
+
+      const [, options] = mockFetch.mock.calls[0];
+      expect(options.headers['Authorization']).toBe('Bearer my-token');
+      expect(options.headers['Content-Type']).toBe('application/json');
+    });
+
+    it('includes error and blockedReason when present', async () => {
+      const config: NotificationsConfig = {
+        level: 'all',
+        webhook: { enabled: true, url: 'https://example.com/hook' },
+      };
+      const svc = new NotificationService(config);
+
+      await svc.notify(makeEvent('failed'));
+
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(body.type).toBe('failed');
+      expect(body.error).toBe('Something went wrong');
+    });
+
+    it('skips when url is empty', async () => {
+      const config: NotificationsConfig = {
+        level: 'all',
+        webhook: { enabled: true, url: '' },
+      };
+      const svc = new NotificationService(config);
+
+      await svc.notify(makeEvent('completed'));
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+  });
+
   describe('error handling', () => {
     it('does not throw when slack webhook fails', async () => {
       mockFetch.mockResolvedValueOnce({ ok: false, status: 500 });
@@ -341,6 +420,7 @@ describe('NotificationService', () => {
         desktop: { enabled: true },
         slack: { enabled: true, webhook_url: 'https://hooks.slack.com/test' },
         discord: { enabled: true, webhook_url: 'https://discord.com/api/webhooks/test' },
+        webhook: { enabled: true, url: 'https://n8n.example.com/webhook/aidf' },
         email: {
           enabled: true,
           smtp_host: 'smtp.example.com',
@@ -355,8 +435,8 @@ describe('NotificationService', () => {
 
       await svc.notify(makeEvent('completed'));
 
-      // Slack + Discord = 2 fetch calls
-      expect(mockFetch).toHaveBeenCalledTimes(2);
+      // Slack + Discord + Webhook = 3 fetch calls
+      expect(mockFetch).toHaveBeenCalledTimes(3);
 
       // Desktop
       const notifier = await import('node-notifier');

@@ -8,6 +8,7 @@ export interface AidfConfig {
   validation: ValidationConfig;
   git: GitConfig;
   notifications?: NotificationsConfig;
+  skills?: SkillsConfig;
 }
 
 export interface ProviderConfig {
@@ -67,12 +68,19 @@ export interface EmailNotificationConfig {
   to: string;
 }
 
+export interface WebhookNotificationConfig {
+  enabled: boolean;
+  url: string;
+  headers?: Record<string, string>;
+}
+
 export interface NotificationsConfig {
   level: NotificationLevel;
   desktop?: DesktopNotificationConfig;
   slack?: SlackNotificationConfig;
   discord?: DiscordNotificationConfig;
   email?: EmailNotificationConfig;
+  webhook?: WebhookNotificationConfig;
 }
 
 export type NotificationEventType = 'completed' | 'blocked' | 'failed';
@@ -160,6 +168,7 @@ export interface LoadedContext {
   role: ParsedRole;
   task: ParsedTask;
   plan?: string;
+  skills?: LoadedSkill[];
 }
 
 // === Scope Types ===
@@ -372,4 +381,32 @@ export interface StructuredLogEntry {
   level: 'debug' | 'info' | 'warn' | 'error' | 'success';
   message: string;
   context?: LogContext;
+}
+
+// === Skill Types ===
+
+export interface SkillMetadata {
+  name: string;
+  description: string;
+  version?: string;
+  author?: string;
+  tags?: string[];
+  globs?: string[];
+}
+
+export interface SkillInfo {
+  name: string;
+  path: string;
+  source: 'project' | 'global' | 'config';
+  metadata: SkillMetadata;
+}
+
+export interface LoadedSkill extends SkillInfo {
+  content: string;
+}
+
+export interface SkillsConfig {
+  enabled?: boolean;
+  directories?: string[];
+  extras?: string[];
 }

@@ -710,6 +710,7 @@ function getDefaultConfig(): AidfConfig {
       desktop: { enabled: false },
       slack: { enabled: false, webhook_url: '' },
       discord: { enabled: false, webhook_url: '' },
+      webhook: { enabled: false, url: '' },
       email: {
         enabled: false,
         smtp_host: '',
