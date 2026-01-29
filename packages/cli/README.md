@@ -46,7 +46,7 @@ aidf status          # View project dashboard
 ```yaml
 version: 1
 provider:
-  type: claude-cli       # claude-cli | anthropic-api | openai-api
+  type: claude-cli       # claude-cli | cursor-cli | anthropic-api | openai-api
   model: claude-sonnet-4-20250514
 execution:
   max_iterations: 50
@@ -70,6 +70,7 @@ git:
 | Provider | Setup | Token Tracking |
 |----------|-------|----------------|
 | **claude-cli** (default) | Install [Claude Code](https://claude.ai/code) | No |
+| **cursor-cli** | Install [Cursor CLI](https://cursor.com/cli) | No |
 | **anthropic-api** | Set `ANTHROPIC_API_KEY` | Yes |
 | **openai-api** | Set `OPENAI_API_KEY` | Yes |
 

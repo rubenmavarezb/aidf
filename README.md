@@ -121,7 +121,7 @@ Create `.ai/config.yml` to customize behavior:
 version: 1
 
 provider:
-  type: claude-cli          # claude-cli | anthropic-api | openai-api
+  type: claude-cli          # claude-cli | cursor-cli | anthropic-api | openai-api
   model: claude-sonnet-4-20250514  # model for API providers
 
 execution:
@@ -165,6 +165,7 @@ notifications:
 | Provider | How it works | Setup | Token Tracking |
 |----------|-------------|-------|----------------|
 | **claude-cli** (default) | Spawns Claude Code CLI | Install [Claude Code](https://claude.ai/code) | No |
+| **cursor-cli** | Spawns Cursor Agent CLI | Install [Cursor CLI](https://cursor.com/cli) | No |
 | **anthropic-api** | Direct API with tool calling | Set `ANTHROPIC_API_KEY` | Yes |
 | **openai-api** | OpenAI API with tool calling | Set `OPENAI_API_KEY` | Yes |
 

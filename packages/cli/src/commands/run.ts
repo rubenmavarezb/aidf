@@ -10,14 +10,14 @@ import { executeTask } from '../core/executor.js';
 import { ParallelExecutor } from '../core/parallel-executor.js';
 import { ContextLoader } from '../core/context-loader.js';
 import { Logger } from '../utils/logger.js';
-import { ProgressBar } from '../utils/progress-bar.js';
-import type { ExecutorResult, ExecutorState } from '../types/index.js';
+import { LiveStatus } from '../utils/live-status.js';
+import type { ExecutorResult, ExecutorState, PhaseEvent } from '../types/index.js';
 
 export function createRunCommand(): Command {
   const cmd = new Command('run')
     .description('Execute a task autonomously')
     .argument('[tasks...]', 'Path(s) to task file(s) (or auto-select first pending)')
-    .option('-p, --provider <type>', 'Provider to use (claude-cli, anthropic-api, openai-api)')
+    .option('-p, --provider <type>', 'Provider to use (claude-cli, cursor-cli, anthropic-api, openai-api)')
     .option('-m, --max-iterations <n>', 'Maximum iterations', parseInt)
     .option('-d, --dry-run', 'Simulate without executing')
     .option('-v, --verbose', 'Verbose output')
@@ -119,32 +119,32 @@ export function createRunCommand(): Command {
         // Ejecutar
         logger.setContext({ task: taskPath, command: 'run' });
         const maxIterations = options.maxIterations || 50;
-        let progressBar = new ProgressBar(maxIterations, options.quiet);
-        let currentIteration = 0;
-        let currentFilesModified = 0;
+        const liveStatus = new LiveStatus(maxIterations, options.quiet);
+        liveStatus.start();
 
         const result = await executeTask(taskPath, {
           dryRun: options.dryRun,
           verbose: options.verbose,
           maxIterations: options.maxIterations,
           resume: options.resume,
+          onPhase: (event: PhaseEvent) => {
+            liveStatus.setPhase(event);
+          },
+          onOutput: (chunk: string) => {
+            liveStatus.handleOutput(chunk);
+          },
           onIteration: (state: ExecutorState) => {
-            currentIteration = state.iteration;
-            currentFilesModified = state.filesModified.length;
             logger.setContext({
               task: taskPath,
               iteration: state.iteration,
               files: state.filesModified,
             });
-            progressBar.update(
-              state.iteration,
-              state.filesModified.length,
-              state.iteration,
-              state.tokenUsage
+            liveStatus.phaseComplete(
+              `Iteration ${state.iteration} complete · ${state.filesModified.length} file${state.filesModified.length !== 1 ? 's' : ''}`
             );
           },
           onAskUser: async (question: string, files: string[]): Promise<boolean> => {
-            progressBar.complete();
+            liveStatus.complete();
             console.log('\n');
             logger.warn(question);
             console.log(chalk.gray('Files:'), files.join(', '));
@@ -156,10 +156,10 @@ export function createRunCommand(): Command {
               default: false,
             }]);
 
-            // Restart progress bar if continuing
+            // Restart live status if continuing
             if (approved) {
-              progressBar = new ProgressBar(maxIterations, options.quiet);
-              progressBar.update(currentIteration, currentFilesModified, currentIteration);
+              const newLiveStatus = new LiveStatus(maxIterations, options.quiet);
+              newLiveStatus.start();
             }
 
             return approved;
@@ -167,7 +167,7 @@ export function createRunCommand(): Command {
         });
 
         // Mostrar resultado
-        progressBar.complete();
+        liveStatus.complete();
 
         printResult(result, logger);
 

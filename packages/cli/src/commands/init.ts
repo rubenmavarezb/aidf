@@ -53,6 +53,7 @@ const PROJECT_TYPES = [
 
 const PROVIDERS = [
   { name: 'Claude CLI (claude.ai/code)', value: 'claude-cli' },
+  { name: 'Cursor CLI (cursor.com/cli)', value: 'cursor-cli' },
   { name: 'Anthropic API (direct)', value: 'anthropic-api' },
   { name: 'OpenAI API', value: 'openai-api' },
 ];
