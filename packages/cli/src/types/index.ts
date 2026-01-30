@@ -21,6 +21,7 @@ export interface ExecutionConfig {
   max_iterations: number;
   max_consecutive_failures: number;
   timeout_per_iteration: number;
+  session_continuation?: boolean;
 }
 
 export interface PermissionsConfig {

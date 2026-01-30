@@ -66,6 +66,10 @@ export class CursorCliProvider implements Provider {
     return new Promise((resolve) => {
       const args: string[] = ['--print'];
 
+      if (options.sessionContinuation) {
+        args.push('--continue');
+      }
+
       const proc = spawn('agent', args, {
         cwd: this.cwd,
         shell: true,

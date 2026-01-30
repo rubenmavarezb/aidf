@@ -32,6 +32,7 @@ vi.mock('./providers/index.js', () => ({
 
 vi.mock('./providers/claude-cli.js', () => ({
   buildIterationPrompt: vi.fn(() => 'mock prompt'),
+  buildContinuationPrompt: vi.fn(() => 'mock continuation prompt'),
 }));
 
 vi.mock('./validator.js', () => {
@@ -61,7 +62,7 @@ vi.mock('../utils/files.js', () => ({
 // Import mocked modules
 import { loadContext } from './context-loader.js';
 import { createProvider } from './providers/index.js';
-import { buildIterationPrompt } from './providers/claude-cli.js';
+import { buildIterationPrompt, buildContinuationPrompt } from './providers/claude-cli.js';
 import { moveTaskFile } from '../utils/files.js';
 import { simpleGit } from 'simple-git';
 
@@ -1058,11 +1059,12 @@ describe('Executor', () => {
       const executor = new Executor(mockConfig);
       await executor.run('/test/task.md');
 
-      // buildIterationPrompt should have been called with previousValidationError on 2nd call
-      expect(buildIterationPrompt).toHaveBeenCalledTimes(2);
-      const secondCallArgs = (buildIterationPrompt as Mock).mock.calls[1][0];
-      expect(secondCallArgs.previousValidationError).toBeDefined();
-      expect(secondCallArgs.previousValidationError).toContain('FAILED');
+      // Iteration 1 uses buildIterationPrompt, iteration 2 uses buildContinuationPrompt
+      expect(buildIterationPrompt).toHaveBeenCalledTimes(1);
+      expect(buildContinuationPrompt).toHaveBeenCalledTimes(1);
+      const continuationArgs = (buildContinuationPrompt as Mock).mock.calls[0][0];
+      expect(continuationArgs.previousValidationError).toBeDefined();
+      expect(continuationArgs.previousValidationError).toContain('FAILED');
     });
 
     it('should NOT include validation error in prompt when no completion signal', async () => {
@@ -1086,9 +1088,10 @@ describe('Executor', () => {
       const executor = new Executor(mockConfig);
       await executor.run('/test/task.md');
 
-      // Second call should NOT have previousValidationError (no signal was detected)
-      const secondCallArgs = (buildIterationPrompt as Mock).mock.calls[1][0];
-      expect(secondCallArgs.previousValidationError).toBeUndefined();
+      // Iteration 2 uses continuation prompt — should NOT have previousValidationError
+      expect(buildContinuationPrompt).toHaveBeenCalledTimes(1);
+      const continuationArgs = (buildContinuationPrompt as Mock).mock.calls[0][0];
+      expect(continuationArgs.previousValidationError).toBeUndefined();
     });
 
     it('should clear validation error after successful validation', async () => {
@@ -1121,11 +1124,13 @@ describe('Executor', () => {
       const executor = new Executor(mockConfig);
       await executor.run('/test/task.md');
 
-      expect(buildIterationPrompt).toHaveBeenCalledTimes(3);
-      // 2nd call should have validation error
-      expect((buildIterationPrompt as Mock).mock.calls[1][0].previousValidationError).toBeDefined();
-      // 3rd call should NOT have validation error (cleared after successful validation)
-      expect((buildIterationPrompt as Mock).mock.calls[2][0].previousValidationError).toBeUndefined();
+      // Iteration 1: buildIterationPrompt, iterations 2-3: buildContinuationPrompt
+      expect(buildIterationPrompt).toHaveBeenCalledTimes(1);
+      expect(buildContinuationPrompt).toHaveBeenCalledTimes(2);
+      // 2nd iteration (continuation call 0) should have validation error
+      expect((buildContinuationPrompt as Mock).mock.calls[0][0].previousValidationError).toBeDefined();
+      // 3rd iteration (continuation call 1) should NOT have validation error (cleared after successful validation)
+      expect((buildContinuationPrompt as Mock).mock.calls[1][0].previousValidationError).toBeUndefined();
     });
 
     it('should not lose completion signal when validation fails (regression test)', async () => {
@@ -1390,6 +1395,185 @@ describe('Executor', () => {
         'Task Blocked',
         expect.any(String)
       );
+    });
+  });
+
+  describe('session continuation', () => {
+    it('should use full prompt on iteration 1 (no sessionContinuation)', async () => {
+      mockProvider.execute.mockResolvedValue({
+        success: true,
+        output: 'Done',
+        filesChanged: [],
+        iterationComplete: true,
+        completionSignal: '<TASK_COMPLETE>',
+      });
+
+      const executor = new Executor(mockConfig);
+      await executor.run('/test/task.md');
+
+      // First iteration should use full prompt
+      expect(buildIterationPrompt).toHaveBeenCalledTimes(1);
+      expect(buildContinuationPrompt).not.toHaveBeenCalled();
+
+      // Should NOT pass sessionContinuation on first iteration
+      expect(mockProvider.execute).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ sessionContinuation: false })
+      );
+    });
+
+    it('should use continuation prompt on iteration 2+', async () => {
+      mockProvider.execute
+        .mockResolvedValueOnce({
+          success: true,
+          output: 'Working...',
+          filesChanged: [],
+          iterationComplete: false,
+          conversationState: [{ role: 'user', content: 'mock' }],
+        })
+        .mockResolvedValueOnce({
+          success: true,
+          output: 'Done',
+          filesChanged: [],
+          iterationComplete: true,
+          completionSignal: '<TASK_COMPLETE>',
+        });
+
+      const executor = new Executor(mockConfig);
+      await executor.run('/test/task.md');
+
+      // First iteration: full prompt, second: continuation
+      expect(buildIterationPrompt).toHaveBeenCalledTimes(1);
+      expect(buildContinuationPrompt).toHaveBeenCalledTimes(1);
+
+      // Second call should have sessionContinuation: true
+      const secondCallOptions = mockProvider.execute.mock.calls[1][1];
+      expect(secondCallOptions.sessionContinuation).toBe(true);
+    });
+
+    it('should pass conversationState between iterations', async () => {
+      const mockState = [{ role: 'user', content: 'state' }];
+
+      mockProvider.execute
+        .mockResolvedValueOnce({
+          success: true,
+          output: 'Working...',
+          filesChanged: [],
+          iterationComplete: false,
+          conversationState: mockState,
+        })
+        .mockResolvedValueOnce({
+          success: true,
+          output: 'Done',
+          filesChanged: [],
+          iterationComplete: true,
+          completionSignal: '<TASK_COMPLETE>',
+        });
+
+      const executor = new Executor(mockConfig);
+      await executor.run('/test/task.md');
+
+      // Second call should pass the conversationState from first iteration
+      const secondCallOptions = mockProvider.execute.mock.calls[1][1];
+      expect(secondCallOptions.conversationState).toEqual(mockState);
+    });
+
+    it('should use sentinel true when provider does not return conversationState', async () => {
+      // CLI providers don't return conversationState — executor uses `true` as sentinel
+      mockProvider.execute
+        .mockResolvedValueOnce({
+          success: true,
+          output: 'Working...',
+          filesChanged: [],
+          iterationComplete: false,
+          // No conversationState returned
+        })
+        .mockResolvedValueOnce({
+          success: true,
+          output: 'Done',
+          filesChanged: [],
+          iterationComplete: true,
+          completionSignal: '<TASK_COMPLETE>',
+        });
+
+      const executor = new Executor(mockConfig);
+      await executor.run('/test/task.md');
+
+      // Second call should still use continuation (sentinel `true` means conversation exists)
+      expect(buildContinuationPrompt).toHaveBeenCalledTimes(1);
+      const secondCallOptions = mockProvider.execute.mock.calls[1][1];
+      expect(secondCallOptions.sessionContinuation).toBe(true);
+    });
+
+    it('should disable continuation when session_continuation is false', async () => {
+      mockProvider.execute
+        .mockResolvedValueOnce({
+          success: true,
+          output: 'Working...',
+          filesChanged: [],
+          iterationComplete: false,
+          conversationState: [{ role: 'user', content: 'state' }],
+        })
+        .mockResolvedValueOnce({
+          success: true,
+          output: 'Done',
+          filesChanged: [],
+          iterationComplete: true,
+          completionSignal: '<TASK_COMPLETE>',
+        });
+
+      const executor = new Executor({
+        ...mockConfig,
+        execution: { ...mockConfig.execution, session_continuation: false },
+      });
+      await executor.run('/test/task.md');
+
+      // Both iterations should use full prompt
+      expect(buildIterationPrompt).toHaveBeenCalledTimes(2);
+      expect(buildContinuationPrompt).not.toHaveBeenCalled();
+
+      // Second call should NOT have sessionContinuation
+      const secondCallOptions = mockProvider.execute.mock.calls[1][1];
+      expect(secondCallOptions.sessionContinuation).toBe(false);
+    });
+
+    it('should fallback to full prompt when continuation fails', async () => {
+      mockProvider.execute
+        // Iteration 1: succeeds
+        .mockResolvedValueOnce({
+          success: true,
+          output: 'Working...',
+          filesChanged: [],
+          iterationComplete: false,
+          conversationState: [{ role: 'user', content: 'state' }],
+        })
+        // Iteration 2: continuation fails
+        .mockResolvedValueOnce({
+          success: false,
+          output: '',
+          error: 'Continuation error',
+          filesChanged: [],
+          iterationComplete: false,
+        })
+        // Iteration 2: fallback with full prompt succeeds
+        .mockResolvedValueOnce({
+          success: true,
+          output: 'Done after fallback',
+          filesChanged: [],
+          iterationComplete: true,
+          completionSignal: '<TASK_COMPLETE>',
+        });
+
+      const executor = new Executor(mockConfig);
+      const result = await executor.run('/test/task.md');
+
+      // Should have used continuation, then fallback
+      expect(buildContinuationPrompt).toHaveBeenCalledTimes(1);
+      // Fallback calls buildIterationPrompt again
+      expect(buildIterationPrompt).toHaveBeenCalledTimes(2);
+      // 3 total provider.execute calls: initial + continuation fail + fallback
+      expect(mockProvider.execute).toHaveBeenCalledTimes(3);
+      expect(result.success).toBe(true);
     });
   });
 });

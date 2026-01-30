@@ -13,6 +13,7 @@ export interface ExecutionResult {
   iterationComplete: boolean;
   completionSignal?: string;
   tokenUsage?: TokenUsage;
+  conversationState?: unknown;
 }
 
 export interface ProviderOptions {
@@ -21,6 +22,8 @@ export interface ProviderOptions {
   maxTokens?: number;
   dangerouslySkipPermissions?: boolean;
   onOutput?: (chunk: string) => void;
+  sessionContinuation?: boolean;
+  conversationState?: unknown;
 }
 
 export interface Provider {

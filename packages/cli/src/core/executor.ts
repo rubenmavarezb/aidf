@@ -12,7 +12,7 @@ import type {
 } from '../types/index.js';
 import { loadContext, estimateContextSize } from './context-loader.js';
 import { createProvider, type Provider } from './providers/index.js';
-import { buildIterationPrompt } from './providers/claude-cli.js';
+import { buildIterationPrompt, buildContinuationPrompt } from './providers/claude-cli.js';
 import { ScopeGuard } from './safety.js';
 import { Validator } from './validator.js';
 import { Logger } from '../utils/logger.js';
@@ -121,6 +121,8 @@ export class Executor {
     let context: LoadedContext;
     let blockedStatus = null;
     let lastValidationError: string | undefined;
+    let previousOutput: string | undefined;
+    let conversationState: unknown;
 
     try {
       // Cargar contexto
@@ -212,21 +214,32 @@ export class Executor {
         // Emit iteration start so live status can show feedback
         this.emitPhase('Starting iteration');
 
+        // Determine if we should use session continuation
+        const useContinuation = this.state.iteration > 1
+          && (this.config.execution?.session_continuation !== false)
+          && conversationState !== undefined;
+
         // Construir prompt con contexto de bloqueo si existe
-        const prompt = buildIterationPrompt({
-          agents: context.agents.raw,
-          role: context.role.raw,
-          task: context.task.raw,
-          plan: context.plan,
-          skills: context.skills,
-          iteration: this.state.iteration,
-          previousValidationError: lastValidationError,
-          blockingContext: blockedStatus ? {
-            previousIteration: blockedStatus.previousIteration,
-            blockingIssue: blockedStatus.blockingIssue,
-            filesModified: blockedStatus.filesModified,
-          } : undefined,
-        });
+        const prompt = useContinuation
+          ? buildContinuationPrompt({
+              previousOutput,
+              previousValidationError: lastValidationError,
+              iteration: this.state.iteration,
+            })
+          : buildIterationPrompt({
+              agents: context.agents.raw,
+              role: context.role.raw,
+              task: context.task.raw,
+              plan: context.plan,
+              skills: context.skills,
+              iteration: this.state.iteration,
+              previousValidationError: lastValidationError,
+              blockingContext: blockedStatus ? {
+                previousIteration: blockedStatus.previousIteration,
+                blockingIssue: blockedStatus.blockingIssue,
+                filesModified: blockedStatus.filesModified,
+              } : undefined,
+            });
 
         // Ejecutar provider
         if (this.options.dryRun) {
@@ -236,13 +249,48 @@ export class Executor {
 
         this.emitPhase('Executing AI');
 
+        if (useContinuation && this.state.contextTokens) {
+          this.logger.info(`Session continuation: ~${this.state.contextTokens.toLocaleString()} static tokens saved`);
+        }
+
         // For claude-cli, conditionally skip permissions based on security config
         // For API providers, this flag is ignored anyway
-        const result = await this.provider.execute(prompt, {
+        let result = await this.provider.execute(prompt, {
           timeout: this.options.timeoutPerIteration * 1000,
           dangerouslySkipPermissions: skipPermissions,
           onOutput: this.options.onOutput,
+          sessionContinuation: useContinuation,
+          conversationState: useContinuation ? conversationState : undefined,
         });
+
+        // Fallback: if continuation failed, retry with full prompt
+        if (useContinuation && !result.success && !result.iterationComplete) {
+          this.log('Session continuation failed, retrying with full prompt');
+          conversationState = undefined;
+          const fullPrompt = buildIterationPrompt({
+            agents: context.agents.raw,
+            role: context.role.raw,
+            task: context.task.raw,
+            plan: context.plan,
+            skills: context.skills,
+            iteration: this.state.iteration,
+            previousValidationError: lastValidationError,
+            blockingContext: blockedStatus ? {
+              previousIteration: blockedStatus.previousIteration,
+              blockingIssue: blockedStatus.blockingIssue,
+              filesModified: blockedStatus.filesModified,
+            } : undefined,
+          });
+          result = await this.provider.execute(fullPrompt, {
+            timeout: this.options.timeoutPerIteration * 1000,
+            dangerouslySkipPermissions: skipPermissions,
+            onOutput: this.options.onOutput,
+          });
+        }
+
+        // Track state for next iteration
+        previousOutput = result.output;
+        conversationState = result.conversationState ?? (useContinuation ? conversationState : true);
 
         // Accumulate token usage from this iteration
         if (result.tokenUsage) {
