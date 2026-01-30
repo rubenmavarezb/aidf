@@ -211,6 +211,77 @@ describe('AnthropicApiProvider', () => {
       );
     });
   });
+
+  describe('session continuation', () => {
+    it('should return conversationState in result', async () => {
+      const mockCreate = vi.fn().mockResolvedValue({
+        content: [{ type: 'text', text: 'Done' }],
+        stop_reason: 'end_turn',
+        usage: { input_tokens: 100, output_tokens: 50 },
+      });
+
+      (provider as any).client.messages.create = mockCreate;
+
+      const result = await provider.execute('Test prompt');
+
+      expect(result.conversationState).toBeDefined();
+      expect(Array.isArray(result.conversationState)).toBe(true);
+    });
+
+    it('should start fresh when no conversationState provided', async () => {
+      const mockCreate = vi.fn().mockResolvedValue({
+        content: [{ type: 'text', text: 'Done' }],
+        stop_reason: 'end_turn',
+        usage: { input_tokens: 100, output_tokens: 50 },
+      });
+
+      (provider as any).client.messages.create = mockCreate;
+
+      await provider.execute('First prompt');
+
+      // Messages should start with just the user prompt
+      const callArgs = mockCreate.mock.calls[0][0];
+      expect(callArgs.messages).toHaveLength(1);
+      expect(callArgs.messages[0].role).toBe('user');
+      expect(callArgs.messages[0].content).toBe('First prompt');
+    });
+
+    it('should continue from conversationState when provided', async () => {
+      const existingState = [
+        { role: 'user', content: 'Previous prompt' },
+        { role: 'assistant', content: [{ type: 'text', text: 'Previous response' }] },
+      ];
+
+      const mockCreate = vi.fn().mockResolvedValue({
+        content: [{ type: 'text', text: 'Continued' }],
+        stop_reason: 'end_turn',
+        usage: { input_tokens: 100, output_tokens: 50 },
+      });
+
+      (provider as any).client.messages.create = mockCreate;
+
+      await provider.execute('Continuation prompt', {
+        conversationState: existingState,
+      });
+
+      // Messages should include previous state + new prompt
+      const callArgs = mockCreate.mock.calls[0][0];
+      expect(callArgs.messages).toHaveLength(3);
+      expect(callArgs.messages[0].content).toBe('Previous prompt');
+      expect(callArgs.messages[1].content).toEqual([{ type: 'text', text: 'Previous response' }]);
+      expect(callArgs.messages[2].content).toBe('Continuation prompt');
+    });
+
+    it('should return conversationState even on error', async () => {
+      const mockCreate = vi.fn().mockRejectedValue(new Error('API Error'));
+      (provider as any).client.messages.create = mockCreate;
+
+      const result = await provider.execute('Test prompt');
+
+      expect(result.conversationState).toBeDefined();
+      expect(Array.isArray(result.conversationState)).toBe(true);
+    });
+  });
 });
 
 describe('createAnthropicApiProvider', () => {

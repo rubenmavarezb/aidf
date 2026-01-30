@@ -16,6 +16,7 @@ import type {
 } from '../types/index.js';
 import { executeTask } from './executor.js';
 import { Logger } from '../utils/logger.js';
+import { normalizeConfig } from '../utils/config.js';
 import { LiveStatus } from '../utils/live-status.js';
 import { NotificationService } from '../utils/notifications.js';
 
@@ -396,11 +397,10 @@ export class Watcher {
       const configPath = join(aiDir, fileName);
       if (existsSync(configPath)) {
         const content = await readFile(configPath, 'utf-8');
-        if (configPath.endsWith('.json')) {
-          this.config = JSON.parse(content);
-        } else {
-          this.config = parseYaml(content);
-        }
+        const raw = configPath.endsWith('.json')
+          ? JSON.parse(content)
+          : parseYaml(content);
+        this.config = normalizeConfig(raw);
         this.logger.debug(`Loaded config from ${fileName}`);
         return;
       }

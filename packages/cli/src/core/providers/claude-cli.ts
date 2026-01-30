@@ -4,7 +4,10 @@ import type { LoadedSkill } from '../../types/index.js';
 import { generateSkillsXml } from '../skill-loader.js';
 
 /**
- * Detects changed files using git status
+ * @description Detects files that have been changed in the working directory using git status.
+ * Runs `git status --porcelain` and parses the output to extract file paths.
+ * @param {string} cwd - The working directory in which to run git status
+ * @returns {Promise<string[]>} A promise that resolves to a list of changed file paths
  */
 async function detectChangedFiles(cwd: string): Promise<string[]> {
   return new Promise((resolve) => {
@@ -68,6 +71,10 @@ export class ClaudeCliProvider implements Provider {
 
     return new Promise((resolve) => {
       const args: string[] = ['--print'];
+
+      if (options.sessionContinuation) {
+        args.push('--continue');
+      }
 
       if (dangerouslySkipPermissions) {
         args.push('--dangerously-skip-permissions');
@@ -262,6 +269,46 @@ export function buildIterationPrompt(context: {
 
   prompt += `**IMPORTANT:** Only modify files within the allowed scope. `;
   prompt += `Do NOT modify files in the forbidden scope.\n`;
+
+  return prompt;
+}
+
+/**
+ * Build a minimal continuation prompt for iterations 2+.
+ * Contains only delta information (validation feedback, iteration number).
+ * Static context (AGENTS.md, role, task, plan, skills) is omitted — the
+ * provider already has it from the first iteration's conversation.
+ */
+export function buildContinuationPrompt(context: {
+  previousOutput?: string;
+  previousValidationError?: string;
+  iteration: number;
+}): string {
+  let prompt = '';
+
+  prompt += `# Continuation — Iteration ${context.iteration}\n\n`;
+  prompt += `Continue working on the task from the previous iteration.\n\n`;
+
+  if (context.previousOutput) {
+    prompt += `## Previous Iteration Output\n\n`;
+    prompt += '```\n';
+    prompt += context.previousOutput.slice(-2000);
+    prompt += '\n```\n\n';
+  }
+
+  if (context.previousValidationError) {
+    prompt += `## Previous Iteration Feedback\n\n`;
+    prompt += `⚠ Your previous iteration signaled <TASK_COMPLETE> but validation failed:\n\n`;
+    prompt += '```\n';
+    prompt += context.previousValidationError;
+    prompt += '\n```\n\n';
+    prompt += `Please fix the validation errors and signal <TASK_COMPLETE> again when done.\n\n`;
+  }
+
+  prompt += `## Reminder\n\n`;
+  prompt += `- Stay within the allowed scope\n`;
+  prompt += `- When ALL Definition of Done criteria are met, output: <TASK_COMPLETE>\n`;
+  prompt += `- If you encounter a blocker, output: <BLOCKED: reason>\n`;
 
   return prompt;
 }

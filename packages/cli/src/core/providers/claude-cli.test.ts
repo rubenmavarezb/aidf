@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { ClaudeCliProvider, buildIterationPrompt } from './claude-cli.js';
+import { ClaudeCliProvider, buildIterationPrompt, buildContinuationPrompt } from './claude-cli.js';
 import { spawn } from 'child_process';
 
 // Mock child_process for tests without real Claude CLI
@@ -320,5 +320,156 @@ describe('buildIterationPrompt', () => {
     });
 
     expect(prompt).not.toContain('Previous Iteration Feedback');
+  });
+});
+
+describe('ClaudeCliProvider session continuation', () => {
+  let provider: ClaudeCliProvider;
+
+  beforeEach(() => {
+    provider = new ClaudeCliProvider('/test/cwd');
+    vi.clearAllMocks();
+  });
+
+  it('should include --continue when sessionContinuation is true', async () => {
+    const executePromise = provider.execute('test prompt', { sessionContinuation: true });
+
+    await new Promise(resolve => setTimeout(resolve, 20));
+
+    const spawnMock = spawn as unknown as ReturnType<typeof vi.fn>;
+    const claudeCall = spawnMock.mock.calls.find(
+      (call: unknown[]) => call[0] === 'claude'
+    );
+    expect(claudeCall).toBeDefined();
+    expect(claudeCall![1]).toContain('--continue');
+
+    await executePromise;
+  });
+
+  it('should not include --continue when sessionContinuation is false', async () => {
+    const executePromise = provider.execute('test prompt', { sessionContinuation: false });
+
+    await new Promise(resolve => setTimeout(resolve, 20));
+
+    const spawnMock = spawn as unknown as ReturnType<typeof vi.fn>;
+    const claudeCall = spawnMock.mock.calls.find(
+      (call: unknown[]) => call[0] === 'claude'
+    );
+    expect(claudeCall).toBeDefined();
+    expect(claudeCall![1]).not.toContain('--continue');
+
+    await executePromise;
+  });
+
+  it('should not include --continue by default', async () => {
+    const executePromise = provider.execute('test prompt');
+
+    await new Promise(resolve => setTimeout(resolve, 20));
+
+    const spawnMock = spawn as unknown as ReturnType<typeof vi.fn>;
+    const claudeCall = spawnMock.mock.calls.find(
+      (call: unknown[]) => call[0] === 'claude'
+    );
+    expect(claudeCall).toBeDefined();
+    expect(claudeCall![1]).not.toContain('--continue');
+
+    await executePromise;
+  });
+
+  it('should include both --continue and --dangerously-skip-permissions when both enabled', async () => {
+    const executePromise = provider.execute('test prompt', {
+      sessionContinuation: true,
+      dangerouslySkipPermissions: true,
+    });
+
+    await new Promise(resolve => setTimeout(resolve, 20));
+
+    const spawnMock = spawn as unknown as ReturnType<typeof vi.fn>;
+    const claudeCall = spawnMock.mock.calls.find(
+      (call: unknown[]) => call[0] === 'claude'
+    );
+    expect(claudeCall).toBeDefined();
+    expect(claudeCall![1]).toContain('--continue');
+    expect(claudeCall![1]).toContain('--dangerously-skip-permissions');
+
+    await executePromise;
+  });
+});
+
+describe('buildContinuationPrompt', () => {
+  it('should include iteration number', () => {
+    const prompt = buildContinuationPrompt({
+      iteration: 3,
+    });
+
+    expect(prompt).toContain('Iteration 3');
+    expect(prompt).toContain('Continuation');
+  });
+
+  it('should be minimal — no AGENTS.md, role, or task sections', () => {
+    const prompt = buildContinuationPrompt({
+      iteration: 2,
+    });
+
+    expect(prompt).not.toContain('Project Context (AGENTS.md)');
+    expect(prompt).not.toContain('Your Role');
+    expect(prompt).not.toContain('Current Task');
+    expect(prompt).not.toContain('Implementation Plan');
+  });
+
+  it('should include previous output when provided', () => {
+    const prompt = buildContinuationPrompt({
+      iteration: 2,
+      previousOutput: 'Some output from last iteration',
+    });
+
+    expect(prompt).toContain('Previous Iteration Output');
+    expect(prompt).toContain('Some output from last iteration');
+  });
+
+  it('should truncate long previous output to 2000 chars', () => {
+    const longOutput = 'X'.repeat(5000);
+    const prompt = buildContinuationPrompt({
+      iteration: 2,
+      previousOutput: longOutput,
+    });
+
+    const xCount = (prompt.match(/X/g) || []).length;
+    expect(xCount).toBe(2000);
+  });
+
+  it('should include validation error when provided', () => {
+    const prompt = buildContinuationPrompt({
+      iteration: 3,
+      previousValidationError: 'pnpm typecheck failed\nerror TS2345',
+    });
+
+    expect(prompt).toContain('Previous Iteration Feedback');
+    expect(prompt).toContain('pnpm typecheck failed');
+    expect(prompt).toContain('fix the validation errors');
+  });
+
+  it('should include reminder with completion signals', () => {
+    const prompt = buildContinuationPrompt({
+      iteration: 2,
+    });
+
+    expect(prompt).toContain('<TASK_COMPLETE>');
+    expect(prompt).toContain('<BLOCKED:');
+  });
+
+  it('should be much shorter than full prompt', () => {
+    const fullPrompt = buildIterationPrompt({
+      agents: 'A'.repeat(2000),
+      role: 'R'.repeat(500),
+      task: 'T'.repeat(500),
+      iteration: 2,
+    });
+
+    const continuationPrompt = buildContinuationPrompt({
+      iteration: 2,
+    });
+
+    expect(continuationPrompt.length).toBeLessThan(fullPrompt.length / 2);
   });
 });

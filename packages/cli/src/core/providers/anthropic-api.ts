@@ -47,11 +47,11 @@ export class AnthropicApiProvider implements Provider {
     let fullOutput = '';
     let totalInputTokens = 0;
     let totalOutputTokens = 0;
+    let messages: Anthropic.MessageParam[] = options.conversationState
+      ? [...(options.conversationState as Anthropic.MessageParam[]), { role: 'user', content: prompt }]
+      : [{ role: 'user', content: prompt }];
 
     try {
-      let messages: Anthropic.MessageParam[] = [
-        { role: 'user', content: prompt },
-      ];
 
       const tools = this.convertToolsToAnthropicFormat(FILE_TOOLS);
 
@@ -119,6 +119,7 @@ export class AnthropicApiProvider implements Provider {
         iterationComplete: isComplete,
         completionSignal: isComplete ? '<TASK_COMPLETE>' : undefined,
         tokenUsage: { inputTokens: totalInputTokens, outputTokens: totalOutputTokens },
+        conversationState: messages,
       };
     } catch (error) {
       return {
@@ -130,6 +131,7 @@ export class AnthropicApiProvider implements Provider {
         tokenUsage: totalInputTokens > 0 || totalOutputTokens > 0
           ? { inputTokens: totalInputTokens, outputTokens: totalOutputTokens }
           : undefined,
+        conversationState: messages,
       };
     }
   }

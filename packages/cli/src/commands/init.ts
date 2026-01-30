@@ -26,7 +26,7 @@ interface InitAnswers {
 
 interface InitConfig {
   framework: string;
-  version: string;
+  version: number;
   project: {
     name: string;
     type: string;
@@ -35,11 +35,17 @@ interface InitConfig {
   provider: {
     type: string;
   };
-  behavior: {
-    scopeEnforcement: string;
-    autoCommit: boolean;
+  permissions: {
+    scope_enforcement: string;
+    auto_commit: boolean;
+    auto_push: boolean;
+    auto_pr: boolean;
   };
-  validation: DetectedCommands;
+  validation: {
+    pre_commit: string[];
+    pre_push: string[];
+    pre_pr: string[];
+  };
   security: {
     skip_permissions: boolean;
     warn_on_skip: boolean;
@@ -185,9 +191,19 @@ async function runInit(
   // Step 6: Create config.yml
   logger.updateSpinner('Creating configuration...');
 
+  // Map detected commands to validation phases
+  const preCommit: string[] = [];
+  const prePush: string[] = [];
+  const prePr: string[] = [];
+  if (detectedCommands.lint) preCommit.push(detectedCommands.lint);
+  if (detectedCommands.typecheck) preCommit.push(detectedCommands.typecheck);
+  if (detectedCommands.format) preCommit.push(detectedCommands.format);
+  if (detectedCommands.test) prePush.push(detectedCommands.test);
+  if (detectedCommands.build) prePr.push(detectedCommands.build);
+
   const config: InitConfig = {
     framework: 'aidf',
-    version: '1.0',
+    version: 1,
     project: {
       name: answers.projectName,
       type: answers.projectType,
@@ -196,11 +212,17 @@ async function runInit(
     provider: {
       type: answers.provider,
     },
-    behavior: {
-      scopeEnforcement: answers.scopeEnforcement,
-      autoCommit: answers.autoCommit,
+    permissions: {
+      scope_enforcement: answers.scopeEnforcement,
+      auto_commit: answers.autoCommit,
+      auto_push: false,
+      auto_pr: false,
     },
-    validation: detectedCommands,
+    validation: {
+      pre_commit: preCommit,
+      pre_push: prePush,
+      pre_pr: prePr,
+    },
     security: {
       skip_permissions: true,
       warn_on_skip: true,

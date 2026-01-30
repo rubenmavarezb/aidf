@@ -291,6 +291,76 @@ describe('OpenAiApiProvider', () => {
       expect(result.filesChanged).toContain('src/new.ts');
     });
   });
+
+  describe('session continuation', () => {
+    it('should return conversationState in result', async () => {
+      const mockCreate = vi.fn().mockResolvedValue({
+        choices: [{
+          message: { content: 'Done', tool_calls: null },
+        }],
+        usage: { prompt_tokens: 100, completion_tokens: 50 },
+      });
+
+      (provider as any).client.chat.completions.create = mockCreate;
+
+      const result = await provider.execute('Test prompt');
+
+      expect(result.conversationState).toBeDefined();
+      expect(Array.isArray(result.conversationState)).toBe(true);
+    });
+
+    it('should start fresh when no conversationState provided', async () => {
+      const mockCreate = vi.fn().mockResolvedValue({
+        choices: [{
+          message: { content: 'Done', tool_calls: null },
+        }],
+      });
+
+      (provider as any).client.chat.completions.create = mockCreate;
+
+      await provider.execute('First prompt');
+
+      const callArgs = mockCreate.mock.calls[0][0];
+      expect(callArgs.messages).toHaveLength(1);
+      expect(callArgs.messages[0].role).toBe('user');
+      expect(callArgs.messages[0].content).toBe('First prompt');
+    });
+
+    it('should continue from conversationState when provided', async () => {
+      const existingState = [
+        { role: 'user', content: 'Previous prompt' },
+        { role: 'assistant', content: 'Previous response' },
+      ];
+
+      const mockCreate = vi.fn().mockResolvedValue({
+        choices: [{
+          message: { content: 'Continued', tool_calls: null },
+        }],
+      });
+
+      (provider as any).client.chat.completions.create = mockCreate;
+
+      await provider.execute('Continuation prompt', {
+        conversationState: existingState,
+      });
+
+      const callArgs = mockCreate.mock.calls[0][0];
+      expect(callArgs.messages).toHaveLength(3);
+      expect(callArgs.messages[0].content).toBe('Previous prompt');
+      expect(callArgs.messages[1].content).toBe('Previous response');
+      expect(callArgs.messages[2].content).toBe('Continuation prompt');
+    });
+
+    it('should return conversationState even on error', async () => {
+      const mockCreate = vi.fn().mockRejectedValue(new Error('API Error'));
+      (provider as any).client.chat.completions.create = mockCreate;
+
+      const result = await provider.execute('Test prompt');
+
+      expect(result.conversationState).toBeDefined();
+      expect(Array.isArray(result.conversationState)).toBe(true);
+    });
+  });
 });
 
 describe('createOpenAiApiProvider', () => {

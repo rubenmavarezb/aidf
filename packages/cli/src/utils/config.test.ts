@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { resolveConfigValue, resolveConfig, detectPlaintextSecrets } from './config.js';
+import { resolveConfigValue, resolveConfig, detectPlaintextSecrets, normalizeConfig } from './config.js';
 
 describe('resolveConfigValue', () => {
   const originalEnv = process.env;
@@ -305,5 +305,156 @@ describe('detectPlaintextSecrets', () => {
     const warnings = detectPlaintextSecrets(config);
     expect(warnings).toHaveLength(1);
     expect(warnings[0]).toContain('deep.nested.secret_key');
+  });
+});
+
+describe('normalizeConfig', () => {
+  it('should map behavior.autoCommit to permissions.auto_commit', () => {
+    const raw = {
+      behavior: { autoCommit: false, scopeEnforcement: 'strict' },
+    };
+    const result = normalizeConfig(raw);
+    expect(result.permissions.auto_commit).toBe(false);
+  });
+
+  it('should map behavior.scopeEnforcement to permissions.scope_enforcement', () => {
+    const raw = {
+      behavior: { autoCommit: true, scopeEnforcement: 'permissive' },
+    };
+    const result = normalizeConfig(raw);
+    expect(result.permissions.scope_enforcement).toBe('permissive');
+  });
+
+  it('should not overwrite existing permissions with behavior', () => {
+    const raw = {
+      behavior: { autoCommit: true },
+      permissions: { auto_commit: false, scope_enforcement: 'strict', auto_push: false, auto_pr: false },
+    };
+    const result = normalizeConfig(raw);
+    expect(result.permissions.auto_commit).toBe(false);
+  });
+
+  it('should fill missing permissions fields from behavior', () => {
+    const raw = {
+      behavior: { autoCommit: false },
+      permissions: { scope_enforcement: 'ask', auto_push: false, auto_pr: false },
+    };
+    const result = normalizeConfig(raw);
+    expect(result.permissions.auto_commit).toBe(false);
+    expect(result.permissions.scope_enforcement).toBe('ask');
+  });
+
+  it('should map keyed validation to array-based validation', () => {
+    const raw = {
+      validation: {
+        lint: 'pnpm lint',
+        typecheck: 'pnpm typecheck',
+        test: 'pnpm test',
+        build: 'pnpm build',
+      },
+    };
+    const result = normalizeConfig(raw);
+    expect(result.validation.pre_commit).toEqual(['pnpm lint', 'pnpm typecheck']);
+    expect(result.validation.pre_push).toEqual(['pnpm test']);
+    expect(result.validation.pre_pr).toEqual(['pnpm build']);
+  });
+
+  it('should not modify already-correct array-based validation', () => {
+    const raw = {
+      validation: {
+        pre_commit: ['pnpm lint'],
+        pre_push: ['pnpm test'],
+        pre_pr: [],
+      },
+    };
+    const result = normalizeConfig(raw);
+    expect(result.validation.pre_commit).toEqual(['pnpm lint']);
+    expect(result.validation.pre_push).toEqual(['pnpm test']);
+    expect(result.validation.pre_pr).toEqual([]);
+  });
+
+  it('should skip empty string validation commands', () => {
+    const raw = {
+      validation: {
+        lint: 'pnpm lint',
+        typecheck: '',
+        test: '',
+        build: '',
+      },
+    };
+    const result = normalizeConfig(raw);
+    expect(result.validation.pre_commit).toEqual(['pnpm lint']);
+    expect(result.validation.pre_push).toEqual([]);
+    expect(result.validation.pre_pr).toEqual([]);
+  });
+
+  it('should normalize version string to number', () => {
+    const raw = { version: '1.0' };
+    const result = normalizeConfig(raw);
+    expect(result.version).toBe(1);
+  });
+
+  it('should leave version number unchanged', () => {
+    const raw = { version: 1 };
+    const result = normalizeConfig(raw);
+    expect(result.version).toBe(1);
+  });
+
+  it('should handle a full legacy config from aidf init', () => {
+    const raw = {
+      framework: 'aidf',
+      version: '1.0',
+      project: { name: 'test', type: 'cli', description: 'test project' },
+      provider: { type: 'claude-cli' },
+      behavior: { scopeEnforcement: 'strict', autoCommit: false },
+      validation: {
+        lint: 'pnpm lint',
+        typecheck: 'pnpm typecheck',
+        test: 'pnpm test',
+        build: 'pnpm build',
+      },
+    };
+    const result = normalizeConfig(raw);
+
+    expect(result.version).toBe(1);
+    expect(result.permissions.auto_commit).toBe(false);
+    expect(result.permissions.scope_enforcement).toBe('strict');
+    expect(result.validation.pre_commit).toEqual(['pnpm lint', 'pnpm typecheck']);
+    expect(result.validation.pre_push).toEqual(['pnpm test']);
+    expect(result.validation.pre_pr).toEqual(['pnpm build']);
+  });
+
+  it('should pass through a correctly structured config unchanged', () => {
+    const raw = {
+      version: 1,
+      provider: { type: 'claude-cli' },
+      permissions: { scope_enforcement: 'ask', auto_commit: true, auto_push: false, auto_pr: false },
+      validation: { pre_commit: ['pnpm lint'], pre_push: ['pnpm test'], pre_pr: [] },
+      git: { commit_prefix: 'aidf:', branch_prefix: 'aidf/' },
+    };
+    const result = normalizeConfig(raw);
+    expect(result).toEqual(raw);
+  });
+
+  it('should include format in pre_commit when present', () => {
+    const raw = {
+      validation: {
+        lint: 'pnpm lint',
+        format: 'pnpm format',
+      },
+    };
+    const result = normalizeConfig(raw);
+    expect(result.validation.pre_commit).toEqual(['pnpm lint', 'pnpm format']);
+  });
+
+  it('should default permissions fields when behavior is partial', () => {
+    const raw = {
+      behavior: { autoCommit: false },
+    };
+    const result = normalizeConfig(raw);
+    expect(result.permissions.auto_commit).toBe(false);
+    expect(result.permissions.auto_push).toBe(false);
+    expect(result.permissions.auto_pr).toBe(false);
+    expect(result.permissions.scope_enforcement).toBe('ask');
   });
 });

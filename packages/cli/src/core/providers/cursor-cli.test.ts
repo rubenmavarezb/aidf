@@ -118,5 +118,39 @@ describe('CursorCliProvider', () => {
         expect.anything()
       );
     });
+
+    it('should include --continue when sessionContinuation is true', async () => {
+      const { spawn } = await import('child_process');
+
+      provider.execute('test prompt', { sessionContinuation: true });
+
+      await vi.waitFor(() => {
+        expect(spawn).toHaveBeenCalledTimes(3);
+      });
+
+      expect(spawn).toHaveBeenNthCalledWith(
+        2,
+        'agent',
+        ['--print', '--continue'],
+        expect.anything()
+      );
+    });
+
+    it('should not include --continue when sessionContinuation is false', async () => {
+      const { spawn } = await import('child_process');
+
+      provider.execute('test prompt', { sessionContinuation: false });
+
+      await vi.waitFor(() => {
+        expect(spawn).toHaveBeenCalledTimes(3);
+      });
+
+      expect(spawn).toHaveBeenNthCalledWith(
+        2,
+        'agent',
+        ['--print'],
+        expect.anything()
+      );
+    });
   });
 });
