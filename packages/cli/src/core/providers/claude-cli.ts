@@ -179,6 +179,7 @@ export function buildIterationPrompt(context: {
   plan?: string;
   skills?: LoadedSkill[];
   previousOutput?: string;
+  previousValidationError?: string;
   iteration: number;
   blockingContext?: {
     previousIteration: number;
@@ -240,6 +241,15 @@ export function buildIterationPrompt(context: {
     prompt += '```\n';
     prompt += context.previousOutput.slice(-2000);
     prompt += '\n```\n\n';
+  }
+
+  if (context.previousValidationError) {
+    prompt += `## Previous Iteration Feedback\n\n`;
+    prompt += `⚠ Your previous iteration signaled <TASK_COMPLETE> but validation failed:\n\n`;
+    prompt += '```\n';
+    prompt += context.previousValidationError;
+    prompt += '\n```\n\n';
+    prompt += `Please fix the validation errors and signal <TASK_COMPLETE> again when done.\n\n`;
   }
 
   prompt += `## Execution Instructions\n\n`;

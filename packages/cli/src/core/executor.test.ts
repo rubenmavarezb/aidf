@@ -2,10 +2,25 @@ import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { Executor, executeTask } from './executor.js';
 import type { AidfConfig, LoadedContext, ExecutorOptions } from '../types/index.js';
 
-// Mock dependencies
-vi.mock('./context-loader.js', () => ({
-  loadContext: vi.fn(),
+// Hoisted mocks (available inside vi.mock factories)
+const { mockPreCommit } = vi.hoisted(() => ({
+  mockPreCommit: vi.fn().mockResolvedValue({
+    phase: 'pre_commit',
+    passed: true,
+    results: [],
+    totalDuration: 0,
+  }),
 }));
+
+// Mock dependencies
+vi.mock('./context-loader.js', async () => {
+  const actual = await vi.importActual<typeof import('./context-loader.js')>('./context-loader.js');
+  return {
+    loadContext: vi.fn(),
+    estimateContextSize: actual.estimateContextSize,
+    estimateTokens: actual.estimateTokens,
+  };
+});
 
 vi.mock('./providers/index.js', () => ({
   createProvider: vi.fn(() => ({
@@ -19,18 +34,36 @@ vi.mock('./providers/claude-cli.js', () => ({
   buildIterationPrompt: vi.fn(() => 'mock prompt'),
 }));
 
+vi.mock('./validator.js', () => {
+  const ValidatorMock = vi.fn().mockImplementation(() => ({
+    preCommit: mockPreCommit,
+  })) as Mock & { formatReport: Mock };
+  ValidatorMock.formatReport = vi.fn((summary: { passed: boolean }) =>
+    summary.passed ? '## ✅ Validation: pre_commit\n**Status:** PASSED' : '## ❌ Validation: pre_commit\n**Status:** FAILED'
+  );
+  return { Validator: ValidatorMock };
+});
+
 vi.mock('simple-git', () => ({
   simpleGit: vi.fn(() => ({
     checkout: vi.fn().mockResolvedValue(undefined),
     add: vi.fn().mockResolvedValue(undefined),
     commit: vi.fn().mockResolvedValue(undefined),
     push: vi.fn().mockResolvedValue(undefined),
+    raw: vi.fn().mockResolvedValue(undefined),
   })),
+}));
+
+vi.mock('../utils/files.js', () => ({
+  moveTaskFile: vi.fn((taskPath: string) => taskPath),
 }));
 
 // Import mocked modules
 import { loadContext } from './context-loader.js';
 import { createProvider } from './providers/index.js';
+import { buildIterationPrompt } from './providers/claude-cli.js';
+import { moveTaskFile } from '../utils/files.js';
+import { simpleGit } from 'simple-git';
 
 describe('Executor', () => {
   const mockConfig: AidfConfig = {
@@ -113,6 +146,14 @@ describe('Executor', () => {
       isAvailable: vi.fn().mockResolvedValue(true),
     };
     (createProvider as Mock).mockReturnValue(mockProvider);
+
+    // Default: validation passes
+    mockPreCommit.mockResolvedValue({
+      phase: 'pre_commit',
+      passed: true,
+      results: [],
+      totalDuration: 0,
+    });
   });
 
   describe('constructor', () => {
@@ -267,6 +308,94 @@ describe('Executor', () => {
       expect(callArg.iteration).toBe(1);
       // Status should be 'running' when callback is called (before completion check)
       expect(callArg.status).toBe('running');
+    });
+
+    it('should call onPhase callback for each phase', async () => {
+      const onPhase = vi.fn();
+
+      mockProvider.execute.mockResolvedValue({
+        success: true,
+        output: 'Done',
+        filesChanged: [],
+        iterationComplete: true,
+        completionSignal: '<TASK_COMPLETE>',
+      });
+
+      const executor = new Executor(mockConfig, { onPhase });
+      await executor.run('/test/task.md');
+
+      // Should be called for: Starting iteration, Executing AI, Checking scope, Validating
+      expect(onPhase).toHaveBeenCalledWith(
+        expect.objectContaining({
+          phase: 'Starting iteration',
+          iteration: 1,
+        })
+      );
+      expect(onPhase).toHaveBeenCalledWith(
+        expect.objectContaining({
+          phase: 'Executing AI',
+          iteration: 1,
+        })
+      );
+      expect(onPhase).toHaveBeenCalledWith(
+        expect.objectContaining({
+          phase: 'Checking scope',
+          iteration: 1,
+        })
+      );
+      expect(onPhase).toHaveBeenCalledWith(
+        expect.objectContaining({
+          phase: 'Validating',
+          iteration: 1,
+        })
+      );
+    });
+
+    it('should emit Scope violation phase on scope block', async () => {
+      const onPhase = vi.fn();
+
+      mockProvider.execute.mockResolvedValue({
+        success: true,
+        output: 'Changed forbidden file',
+        filesChanged: ['node_modules/some-file.js'],
+        iterationComplete: false,
+      });
+
+      const executor = new Executor(
+        {
+          ...mockConfig,
+          permissions: { ...mockConfig.permissions, scope_enforcement: 'strict' },
+          execution: { ...mockConfig.execution, max_consecutive_failures: 1 },
+        },
+        { onPhase }
+      );
+      await executor.run('/test/task.md');
+
+      expect(onPhase).toHaveBeenCalledWith(
+        expect.objectContaining({
+          phase: 'Scope violation',
+        })
+      );
+    });
+
+    it('should pass onOutput callback to provider', async () => {
+      const onOutput = vi.fn();
+
+      mockProvider.execute.mockResolvedValue({
+        success: true,
+        output: 'Done',
+        filesChanged: [],
+        iterationComplete: true,
+        completionSignal: '<TASK_COMPLETE>',
+      });
+
+      const executor = new Executor(mockConfig, { onOutput });
+      await executor.run('/test/task.md');
+
+      expect(mockProvider.execute).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ onOutput })
+      );
     });
   });
 
@@ -686,6 +815,580 @@ describe('Executor', () => {
 
       expect(loggerSpy).not.toHaveBeenCalledWith(
         expect.stringContaining('--dangerously-skip-permissions')
+      );
+    });
+  });
+
+  describe('task file movement', () => {
+    it('should move task file to completed/ on success', async () => {
+      mockProvider.execute.mockResolvedValue({
+        success: true,
+        output: 'Done',
+        filesChanged: [],
+        iterationComplete: true,
+        completionSignal: '<TASK_COMPLETE>',
+      });
+
+      const executor = new Executor(mockConfig);
+      await executor.run('/test/task.md');
+
+      expect(moveTaskFile).toHaveBeenCalledWith('/test/task.md', 'completed');
+    });
+
+    it('should move task file to blocked/ on blocked status', async () => {
+      mockProvider.execute.mockResolvedValue({
+        success: false,
+        output: '',
+        error: 'BLOCKED: Cannot proceed',
+        filesChanged: [],
+        iterationComplete: false,
+      });
+
+      const executor = new Executor(mockConfig);
+      await executor.run('/test/task.md');
+
+      expect(moveTaskFile).toHaveBeenCalledWith('/test/task.md', 'blocked');
+    });
+
+    it('should move task file to blocked/ when max iterations reached', async () => {
+      mockProvider.execute.mockResolvedValue({
+        success: true,
+        output: 'Still working...',
+        filesChanged: [],
+        iterationComplete: false,
+      });
+
+      const executor = new Executor({
+        ...mockConfig,
+        execution: { ...mockConfig.execution, max_iterations: 2 },
+      });
+      await executor.run('/test/task.md');
+
+      expect(moveTaskFile).toHaveBeenCalledWith('/test/task.md', 'blocked');
+    });
+
+    it('should not fail if moveTaskFile throws', async () => {
+      (moveTaskFile as Mock).mockImplementation(() => {
+        throw new Error('Permission denied');
+      });
+
+      mockProvider.execute.mockResolvedValue({
+        success: true,
+        output: 'Done',
+        filesChanged: [],
+        iterationComplete: true,
+        completionSignal: '<TASK_COMPLETE>',
+      });
+
+      const executor = new Executor(mockConfig);
+      const result = await executor.run('/test/task.md');
+
+      expect(result.success).toBe(true);
+      expect(result.status).toBe('completed');
+    });
+
+    it('should stage task file after writing completed status', async () => {
+      (moveTaskFile as Mock).mockReturnValue('/test/task.md');
+
+      mockProvider.execute.mockResolvedValue({
+        success: true,
+        output: 'Done',
+        filesChanged: [],
+        iterationComplete: true,
+        completionSignal: '<TASK_COMPLETE>',
+      });
+
+      const executor = new Executor(mockConfig);
+      await executor.run('/test/task.md');
+
+      const mockGit = (simpleGit as unknown as Mock).mock.results[0].value;
+      // Should have staged the task file (git add)
+      expect(mockGit.add).toHaveBeenCalledWith(['/test/task.md']);
+    });
+
+    it('should stage moved task file and remove old path on completion', async () => {
+      const newPath = '/test/completed/task.md';
+      (moveTaskFile as Mock).mockReturnValue(newPath);
+
+      mockProvider.execute.mockResolvedValue({
+        success: true,
+        output: 'Done',
+        filesChanged: [],
+        iterationComplete: true,
+        completionSignal: '<TASK_COMPLETE>',
+      });
+
+      const executor = new Executor(mockConfig);
+      await executor.run('/test/task.md');
+
+      const mockGit = (simpleGit as unknown as Mock).mock.results[0].value;
+      // Should stage the new file location
+      expect(mockGit.add).toHaveBeenCalledWith([newPath]);
+      // Should remove the old path from git index
+      expect(mockGit.raw).toHaveBeenCalledWith(['rm', '--cached', '--ignore-unmatch', '/test/task.md']);
+    });
+
+    it('should stage task file after writing blocked status', async () => {
+      (moveTaskFile as Mock).mockReturnValue('/test/task.md');
+
+      mockProvider.execute.mockResolvedValue({
+        success: false,
+        output: '',
+        error: 'BLOCKED: Cannot proceed',
+        filesChanged: [],
+        iterationComplete: false,
+      });
+
+      const executor = new Executor(mockConfig);
+      await executor.run('/test/task.md');
+
+      const mockGit = (simpleGit as unknown as Mock).mock.results[0].value;
+      // Should have staged the task file
+      expect(mockGit.add).toHaveBeenCalledWith(['/test/task.md']);
+    });
+
+    it('should not fail if staging task file throws', async () => {
+      const newPath = '/test/completed/task.md';
+      (moveTaskFile as Mock).mockReturnValue(newPath);
+
+      mockProvider.execute.mockResolvedValue({
+        success: true,
+        output: 'Done',
+        filesChanged: [],
+        iterationComplete: true,
+        completionSignal: '<TASK_COMPLETE>',
+      });
+
+      // Create executor first so simpleGit is called
+      const executor = new Executor(mockConfig);
+
+      // Now access the git mock and make add throw
+      const mockGit = (simpleGit as unknown as Mock).mock.results.at(-1)!.value;
+      mockGit.add.mockRejectedValueOnce(new Error('git add failed'));
+
+      const result = await executor.run('/test/task.md');
+
+      expect(result.success).toBe(true);
+      expect(result.status).toBe('completed');
+    });
+  });
+
+  describe('completion signal + validation interaction', () => {
+    const failedValidation = {
+      phase: 'pre_commit' as const,
+      passed: false,
+      results: [
+        {
+          command: 'pnpm typecheck',
+          passed: false,
+          output: 'error TS2345: Argument of type...',
+          duration: 1500,
+          exitCode: 1,
+        },
+      ],
+      totalDuration: 1500,
+    };
+
+    it('should complete when completion signal + validation passes', async () => {
+      mockProvider.execute.mockResolvedValue({
+        success: true,
+        output: '<TASK_COMPLETE>',
+        filesChanged: [],
+        iterationComplete: true,
+        completionSignal: '<TASK_COMPLETE>',
+      });
+
+      const executor = new Executor(mockConfig);
+      const result = await executor.run('/test/task.md');
+
+      expect(result.success).toBe(true);
+      expect(result.status).toBe('completed');
+      expect(result.iterations).toBe(1);
+    });
+
+    it('should NOT complete when completion signal + validation fails', async () => {
+      // First iteration: AI signals completion but validation fails
+      mockPreCommit.mockResolvedValueOnce(failedValidation);
+      mockProvider.execute
+        .mockResolvedValueOnce({
+          success: true,
+          output: '<TASK_COMPLETE>',
+          filesChanged: [],
+          iterationComplete: true,
+          completionSignal: '<TASK_COMPLETE>',
+        })
+        // Second iteration: AI fixes and re-signals, validation passes
+        .mockResolvedValueOnce({
+          success: true,
+          output: '<TASK_COMPLETE>',
+          filesChanged: [],
+          iterationComplete: true,
+          completionSignal: '<TASK_COMPLETE>',
+        });
+
+      const executor = new Executor(mockConfig);
+      const result = await executor.run('/test/task.md');
+
+      // Should complete on second iteration (after AI fixes the issue)
+      expect(result.success).toBe(true);
+      expect(result.status).toBe('completed');
+      expect(result.iterations).toBe(2);
+    });
+
+    it('should include validation error in next iteration prompt', async () => {
+      // First iteration: completion signal + validation fails
+      mockPreCommit.mockResolvedValueOnce(failedValidation);
+      mockProvider.execute
+        .mockResolvedValueOnce({
+          success: true,
+          output: '<TASK_COMPLETE>',
+          filesChanged: [],
+          iterationComplete: true,
+          completionSignal: '<TASK_COMPLETE>',
+        })
+        // Second iteration: completes successfully
+        .mockResolvedValueOnce({
+          success: true,
+          output: '<TASK_COMPLETE>',
+          filesChanged: [],
+          iterationComplete: true,
+          completionSignal: '<TASK_COMPLETE>',
+        });
+
+      const executor = new Executor(mockConfig);
+      await executor.run('/test/task.md');
+
+      // buildIterationPrompt should have been called with previousValidationError on 2nd call
+      expect(buildIterationPrompt).toHaveBeenCalledTimes(2);
+      const secondCallArgs = (buildIterationPrompt as Mock).mock.calls[1][0];
+      expect(secondCallArgs.previousValidationError).toBeDefined();
+      expect(secondCallArgs.previousValidationError).toContain('FAILED');
+    });
+
+    it('should NOT include validation error in prompt when no completion signal', async () => {
+      // Validation fails without completion signal — existing behavior
+      mockPreCommit.mockResolvedValueOnce(failedValidation);
+      mockProvider.execute
+        .mockResolvedValueOnce({
+          success: true,
+          output: 'Still working...',
+          filesChanged: [],
+          iterationComplete: false,
+        })
+        .mockResolvedValueOnce({
+          success: true,
+          output: '<TASK_COMPLETE>',
+          filesChanged: [],
+          iterationComplete: true,
+          completionSignal: '<TASK_COMPLETE>',
+        });
+
+      const executor = new Executor(mockConfig);
+      await executor.run('/test/task.md');
+
+      // Second call should NOT have previousValidationError (no signal was detected)
+      const secondCallArgs = (buildIterationPrompt as Mock).mock.calls[1][0];
+      expect(secondCallArgs.previousValidationError).toBeUndefined();
+    });
+
+    it('should clear validation error after successful validation', async () => {
+      // Iteration 1: signal + validation fails
+      mockPreCommit.mockResolvedValueOnce(failedValidation);
+      // Iteration 2: no signal, validation passes
+      // Iteration 3: signal + validation passes
+      mockProvider.execute
+        .mockResolvedValueOnce({
+          success: true,
+          output: '<TASK_COMPLETE>',
+          filesChanged: [],
+          iterationComplete: true,
+          completionSignal: '<TASK_COMPLETE>',
+        })
+        .mockResolvedValueOnce({
+          success: true,
+          output: 'Fixing...',
+          filesChanged: [],
+          iterationComplete: false,
+        })
+        .mockResolvedValueOnce({
+          success: true,
+          output: '<TASK_COMPLETE>',
+          filesChanged: [],
+          iterationComplete: true,
+          completionSignal: '<TASK_COMPLETE>',
+        });
+
+      const executor = new Executor(mockConfig);
+      await executor.run('/test/task.md');
+
+      expect(buildIterationPrompt).toHaveBeenCalledTimes(3);
+      // 2nd call should have validation error
+      expect((buildIterationPrompt as Mock).mock.calls[1][0].previousValidationError).toBeDefined();
+      // 3rd call should NOT have validation error (cleared after successful validation)
+      expect((buildIterationPrompt as Mock).mock.calls[2][0].previousValidationError).toBeUndefined();
+    });
+
+    it('should not lose completion signal when validation fails (regression test)', async () => {
+      // This is the exact bug scenario: AI emits TASK_COMPLETE, validation fails,
+      // next iteration AI doesn't re-emit, resulting in false BLOCKED.
+      // With the fix, the validation error is passed so AI knows to re-emit.
+      mockPreCommit
+        .mockResolvedValueOnce(failedValidation) // iter 1: validation fails
+        .mockResolvedValue({ // iter 2+: validation passes
+          phase: 'pre_commit',
+          passed: true,
+          results: [],
+          totalDuration: 0,
+        });
+
+      mockProvider.execute
+        .mockResolvedValueOnce({
+          success: true,
+          output: '<TASK_COMPLETE>',
+          filesChanged: [],
+          iterationComplete: true,
+          completionSignal: '<TASK_COMPLETE>',
+        })
+        .mockResolvedValueOnce({
+          success: true,
+          output: '<TASK_COMPLETE>',
+          filesChanged: [],
+          iterationComplete: true,
+          completionSignal: '<TASK_COMPLETE>',
+        });
+
+      const executor = new Executor(mockConfig);
+      const result = await executor.run('/test/task.md');
+
+      // Should complete on iteration 2, NOT be blocked
+      expect(result.success).toBe(true);
+      expect(result.status).toBe('completed');
+      expect(result.iterations).toBe(2);
+      expect(result.blockedReason).toBeUndefined();
+    });
+  });
+
+  describe('completion signal + scope violation interaction', () => {
+    it('should accept completion despite scope violation when signal detected', async () => {
+      // AI completes the task but also touches a forbidden file
+      mockProvider.execute.mockResolvedValue({
+        success: true,
+        output: '<TASK_COMPLETE>',
+        filesChanged: ['src/allowed.ts', 'node_modules/forbidden.js'],
+        iterationComplete: true,
+        completionSignal: '<TASK_COMPLETE>',
+      });
+
+      const executor = new Executor(mockConfig);
+      const result = await executor.run('/test/task.md');
+
+      // Should complete, not fail — the forbidden files get reverted
+      expect(result.success).toBe(true);
+      expect(result.status).toBe('completed');
+      expect(result.iterations).toBe(1);
+    });
+
+    it('should still fail on scope violation when no completion signal', async () => {
+      // AI modifies forbidden files without signaling completion
+      mockProvider.execute.mockResolvedValue({
+        success: true,
+        output: 'Working on it',
+        filesChanged: ['node_modules/bad.js'],
+        iterationComplete: false,
+      });
+
+      const executor = new Executor({
+        ...mockConfig,
+        execution: { ...mockConfig.execution, max_consecutive_failures: 2 },
+      });
+      const result = await executor.run('/test/task.md');
+
+      expect(result.success).toBe(false);
+      expect(result.status).toBe('blocked');
+    });
+  });
+
+  describe('token usage reporting', () => {
+    it('should include context token estimate in result', async () => {
+      mockProvider.execute.mockResolvedValue({
+        success: true,
+        output: 'Done',
+        filesChanged: [],
+        iterationComplete: true,
+        completionSignal: '<TASK_COMPLETE>',
+      });
+
+      const executor = new Executor(mockConfig);
+      const result = await executor.run('/test/task.md');
+
+      expect(result.tokenUsage).toBeDefined();
+      expect(result.tokenUsage!.contextTokens).toBeGreaterThan(0);
+      expect(result.tokenUsage!.breakdown).toBeDefined();
+      expect(result.tokenUsage!.breakdown!.agents).toBeGreaterThan(0);
+      expect(result.tokenUsage!.breakdown!.role).toBeGreaterThan(0);
+      expect(result.tokenUsage!.breakdown!.task).toBeGreaterThan(0);
+    });
+
+    it('should accumulate API provider token usage across iterations', async () => {
+      mockProvider.execute
+        .mockResolvedValueOnce({
+          success: true,
+          output: 'Working...',
+          filesChanged: [],
+          iterationComplete: false,
+          tokenUsage: { inputTokens: 1000, outputTokens: 200 },
+        })
+        .mockResolvedValueOnce({
+          success: true,
+          output: 'Done',
+          filesChanged: [],
+          iterationComplete: true,
+          completionSignal: '<TASK_COMPLETE>',
+          tokenUsage: { inputTokens: 1500, outputTokens: 300 },
+        });
+
+      const executor = new Executor(mockConfig);
+      const result = await executor.run('/test/task.md');
+
+      expect(result.tokenUsage).toBeDefined();
+      expect(result.tokenUsage!.totalInputTokens).toBe(2500);
+      expect(result.tokenUsage!.totalOutputTokens).toBe(500);
+      expect(result.tokenUsage!.totalTokens).toBe(3000);
+    });
+
+    it('should estimate cost based on token usage', async () => {
+      mockProvider.execute.mockResolvedValue({
+        success: true,
+        output: 'Done',
+        filesChanged: [],
+        iterationComplete: true,
+        completionSignal: '<TASK_COMPLETE>',
+        tokenUsage: { inputTokens: 1_000_000, outputTokens: 100_000 },
+      });
+
+      const executor = new Executor(mockConfig);
+      const result = await executor.run('/test/task.md');
+
+      expect(result.tokenUsage).toBeDefined();
+      expect(result.tokenUsage!.estimatedCost).toBeDefined();
+      // $3/MTok input + $15/MTok output = $3 + $1.5 = $4.5
+      expect(result.tokenUsage!.estimatedCost).toBeCloseTo(4.5, 1);
+    });
+
+    it('should report context tokens even without API token usage', async () => {
+      mockProvider.execute.mockResolvedValue({
+        success: true,
+        output: 'Done',
+        filesChanged: [],
+        iterationComplete: true,
+        completionSignal: '<TASK_COMPLETE>',
+        // No tokenUsage (CLI provider)
+      });
+
+      const executor = new Executor(mockConfig);
+      const result = await executor.run('/test/task.md');
+
+      expect(result.tokenUsage).toBeDefined();
+      expect(result.tokenUsage!.contextTokens).toBeGreaterThan(0);
+      expect(result.tokenUsage!.totalInputTokens).toBe(0);
+      expect(result.tokenUsage!.totalOutputTokens).toBe(0);
+    });
+
+    it('should log context breakdown after loading context', async () => {
+      mockProvider.execute.mockResolvedValue({
+        success: true,
+        output: 'Done',
+        filesChanged: [],
+        iterationComplete: true,
+        completionSignal: '<TASK_COMPLETE>',
+      });
+
+      const executor = new Executor(mockConfig);
+      const loggerSpy = vi.spyOn(
+        (executor as unknown as { logger: { info: (msg: string) => void } }).logger,
+        'info'
+      );
+
+      await executor.run('/test/task.md');
+
+      const contextLogCall = loggerSpy.mock.calls.find(
+        ([msg]) => typeof msg === 'string' && msg.includes('Context loaded:')
+      );
+      expect(contextLogCall).toBeDefined();
+
+      const agentsLogCall = loggerSpy.mock.calls.find(
+        ([msg]) => typeof msg === 'string' && msg.includes('AGENTS.md:')
+      );
+      expect(agentsLogCall).toBeDefined();
+    });
+
+    it('should log per-iteration token usage for API providers', async () => {
+      mockProvider.execute.mockResolvedValue({
+        success: true,
+        output: 'Done',
+        filesChanged: [],
+        iterationComplete: true,
+        completionSignal: '<TASK_COMPLETE>',
+        tokenUsage: { inputTokens: 5000, outputTokens: 1000 },
+      });
+
+      const executor = new Executor(mockConfig);
+      const loggerSpy = vi.spyOn(
+        (executor as unknown as { logger: { info: (msg: string) => void } }).logger,
+        'info'
+      );
+
+      await executor.run('/test/task.md');
+
+      const iterationTokenLog = loggerSpy.mock.calls.find(
+        ([msg]) => typeof msg === 'string' && msg.includes('Iteration 1 tokens:')
+      );
+      expect(iterationTokenLog).toBeDefined();
+    });
+
+    it('should log execution summary box on completion', async () => {
+      mockProvider.execute.mockResolvedValue({
+        success: true,
+        output: 'Done',
+        filesChanged: [],
+        iterationComplete: true,
+        completionSignal: '<TASK_COMPLETE>',
+      });
+
+      const executor = new Executor(mockConfig);
+      const boxSpy = vi.spyOn(
+        (executor as unknown as { logger: { box: (title: string, content: string) => void } }).logger,
+        'box'
+      );
+
+      await executor.run('/test/task.md');
+
+      expect(boxSpy).toHaveBeenCalledWith(
+        'Task Completed',
+        expect.stringContaining('Iterations: 1')
+      );
+    });
+
+    it('should log execution summary with blocked title on block', async () => {
+      mockProvider.execute.mockResolvedValue({
+        success: false,
+        output: '',
+        error: 'BLOCKED: Cannot proceed',
+        filesChanged: [],
+        iterationComplete: false,
+      });
+
+      const executor = new Executor(mockConfig);
+      const boxSpy = vi.spyOn(
+        (executor as unknown as { logger: { box: (title: string, content: string) => void } }).logger,
+        'box'
+      );
+
+      await executor.run('/test/task.md');
+
+      expect(boxSpy).toHaveBeenCalledWith(
+        'Task Blocked',
+        expect.any(String)
       );
     });
   });

@@ -222,6 +222,8 @@ export interface ExecutorState {
   filesModified: string[];
   validationResults: ValidationSummary[];
   tokenUsage?: { inputTokens: number; outputTokens: number };
+  contextBreakdown?: ContextBreakdown;
+  contextTokens?: number;
 }
 
 export interface PhaseEvent {
@@ -248,6 +250,27 @@ export interface ExecutorOptions {
   onAskUser?: (question: string, files: string[]) => Promise<boolean>;
 }
 
+export interface ContextBreakdown {
+  agents: number;
+  role: number;
+  task: number;
+  plan: number;
+  skills: number;
+}
+
+export interface TokenUsageSummary {
+  contextTokens: number;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalTokens: number;
+  estimatedCost?: number;
+  breakdown?: ContextBreakdown;
+  /** @deprecated Use totalInputTokens instead */
+  inputTokens: number;
+  /** @deprecated Use totalOutputTokens instead */
+  outputTokens: number;
+}
+
 export interface ExecutorResult {
   success: boolean;
   status: ExecutorStatus;
@@ -256,7 +279,7 @@ export interface ExecutorResult {
   error?: string;
   blockedReason?: string;
   taskPath: string;
-  tokenUsage?: { inputTokens: number; outputTokens: number };
+  tokenUsage?: TokenUsageSummary;
 }
 
 // === Status Command Types ===
@@ -404,19 +427,42 @@ export interface SkillInfo {
 
 export interface LoadedSkill extends SkillInfo {
   content: string;
+  warnings?: SecurityWarning[];
 }
 
 export interface SkillsConfig {
   enabled?: boolean;
   directories?: string[];
   extras?: string[];
+  /** Block skills with danger-level security warnings. Default: false */
+  block_suspicious?: boolean;
+}
+
+// === Skill Security Types ===
+
+export interface SecurityWarning {
+  level: 'warning' | 'danger';
+  pattern: string;
+  description: string;
+  line?: number;
 }
 
 // === Security Types ===
+
+export interface CommandPolicy {
+  /** Commands that are always allowed (e.g., ["pnpm test", "pnpm lint"]) */
+  allowed?: string[];
+  /** Commands or patterns that are always blocked (e.g., ["rm -rf", "sudo"]) */
+  blocked?: string[];
+  /** Block all commands not in the allowed list. Default: false */
+  strict?: boolean;
+}
 
 export interface SecurityConfig {
   /** Whether to skip Claude CLI permission prompts. Default: true for backward compat */
   skip_permissions?: boolean;
   /** Show a warning when skip_permissions is true. Default: true */
   warn_on_skip?: boolean;
+  /** Command execution policy for API providers */
+  commands?: CommandPolicy;
 }

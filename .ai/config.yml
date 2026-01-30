@@ -1,0 +1,19 @@
+version: "1.0"
+project:
+  name: aidf
+  type: cli
+  description: "AI-Integrated Development Framework - Task runner for AI agents with scope enforcement"
+provider:
+  type: claude-cli
+behavior:
+  scopeEnforcement: strict
+  autoCommit: false
+execution:
+  max_iterations: 10
+validation:
+  lint: pnpm lint
+  typecheck: pnpm typecheck
+  test: pnpm test
+  build: pnpm build
+skills:
+  enabled: true

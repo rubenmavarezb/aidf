@@ -128,7 +128,13 @@ export function createRunCommand(): Command {
           maxIterations: options.maxIterations,
           resume: options.resume,
           onPhase: (event: PhaseEvent) => {
-            liveStatus.setPhase(event);
+            if (event.phase === 'Starting iteration') {
+              liveStatus.iterationStart(event.iteration, event.totalIterations);
+            } else if (event.phase === 'Scope violation' || event.phase === 'Validation failed') {
+              liveStatus.phaseFailed(event.phase);
+            } else {
+              liveStatus.setPhase(event);
+            }
           },
           onOutput: (chunk: string) => {
             liveStatus.handleOutput(chunk);
@@ -139,8 +145,10 @@ export function createRunCommand(): Command {
               iteration: state.iteration,
               files: state.filesModified,
             });
-            liveStatus.phaseComplete(
-              `Iteration ${state.iteration} complete · ${state.filesModified.length} file${state.filesModified.length !== 1 ? 's' : ''}`
+            liveStatus.iterationEnd(
+              state.iteration,
+              state.filesModified.length,
+              true
             );
           },
           onAskUser: async (question: string, files: string[]): Promise<boolean> => {
@@ -306,24 +314,9 @@ async function resolveTaskPath(
     return null;
   }
 
-  const files = await readdir(tasksDir);
-  const taskFiles = files
-    .filter(f => f.endsWith('.md') && !f.startsWith('.'))
-    .sort();
-
-  if (taskFiles.length === 0) {
-    return null;
-  }
-
-  // Si es resume, filtrar solo tasks bloqueadas
+  // Si es resume, buscar tasks bloqueadas
   if (resume) {
-    const blockedTasks: string[] = [];
-    for (const file of taskFiles) {
-      const content = await readFile(join(tasksDir, file), 'utf-8');
-      if (content.includes('## Status:') && content.includes('BLOCKED')) {
-        blockedTasks.push(file);
-      }
-    }
+    const blockedTasks = await findTasksInDirs(tasksDir, ['blocked', ''], 'blocked');
 
     if (blockedTasks.length === 0) {
       logger.error('No blocked tasks found.');
@@ -331,20 +324,38 @@ async function resolveTaskPath(
     }
 
     if (blockedTasks.length === 1) {
-      return join(tasksDir, blockedTasks[0]);
+      return blockedTasks[0];
     }
 
-    // Mostrar selector de tasks bloqueadas
     logger.warn('Multiple blocked tasks found. Select one to resume:');
     const { selected } = await inquirer.prompt([{
       type: 'list',
       name: 'selected',
       message: 'Select blocked task to resume:',
-      choices: blockedTasks,
+      choices: blockedTasks.map(t => ({ name: t.split('/').pop()!, value: t })),
     }]);
 
-    return join(tasksDir, selected);
+    return selected;
   }
+
+  // Search pending/ first, then fall back to tasks/ root (backward compat)
+  const pendingDir = join(tasksDir, 'pending');
+  if (existsSync(pendingDir)) {
+    const pendingFiles = await readdir(pendingDir);
+    const pendingTasks = pendingFiles
+      .filter(f => f.endsWith('.md') && !f.startsWith('.'))
+      .sort();
+
+    if (pendingTasks.length > 0) {
+      return join(pendingDir, pendingTasks[0]);
+    }
+  }
+
+  // Fallback: look directly in tasks/ for backward compatibility
+  const files = await readdir(tasksDir);
+  const taskFiles = files
+    .filter(f => f.endsWith('.md') && !f.startsWith('.'))
+    .sort();
 
   // Buscar primera sin status BLOCKED o COMPLETED
   for (const file of taskFiles) {
@@ -353,6 +364,10 @@ async function resolveTaskPath(
     if (!content.includes('## Status:')) {
       return join(tasksDir, file);
     }
+  }
+
+  if (taskFiles.length === 0) {
+    return null;
   }
 
   // Si todas tienen status, mostrar selector
@@ -365,6 +380,52 @@ async function resolveTaskPath(
   }]);
 
   return join(tasksDir, selected);
+}
+
+/**
+ * Find task files in multiple directories, optionally filtering by status.
+ */
+async function findTasksInDirs(
+  tasksDir: string,
+  subfolders: string[],
+  statusFilter?: 'blocked' | 'completed'
+): Promise<string[]> {
+  const results: string[] = [];
+
+  for (const subfolder of subfolders) {
+    const dir = subfolder ? join(tasksDir, subfolder) : tasksDir;
+    if (!existsSync(dir)) continue;
+
+    try {
+      const files = await readdir(dir);
+      const taskFiles = files
+        .filter(f => f.endsWith('.md') && !f.startsWith('.'))
+        .sort();
+
+      for (const file of taskFiles) {
+        const fullPath = join(dir, file);
+
+        if (statusFilter) {
+          const content = await readFile(fullPath, 'utf-8');
+          if (statusFilter === 'blocked') {
+            if (content.includes('## Status:') && content.includes('BLOCKED')) {
+              results.push(fullPath);
+            }
+          } else if (statusFilter === 'completed') {
+            if (content.includes('## Status:') && (content.includes('COMPLETED') || content.includes('✅'))) {
+              results.push(fullPath);
+            }
+          }
+        } else {
+          results.push(fullPath);
+        }
+      }
+    } catch {
+      // Ignore errors reading directory
+    }
+  }
+
+  return results;
 }
 
 function printResult(result: ExecutorResult, logger: Logger): void {

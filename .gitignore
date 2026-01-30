@@ -24,3 +24,8 @@ dist/
 # Misc
 *.log
 .env*
+
+# AIDF
+.ai/tasks/*.log
+.ai/tasks/*.tmp
+.ai/.cache/

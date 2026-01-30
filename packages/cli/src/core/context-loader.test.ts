@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { ContextLoader } from './context-loader.js';
+import { ContextLoader, estimateTokens, estimateContextSize } from './context-loader.js';
+import type { LoadedContext } from '../types/index.js';
 import { mkdir, writeFile, rm } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
@@ -631,6 +632,54 @@ Implement feature.
       expect(context.plan).toBeUndefined();
     });
 
+    it('should filter skills by task role', async () => {
+      // Setup AGENTS.md, role, task
+      await writeFile(join(aiDir, 'AGENTS.md'), `# AGENTS.md\n\n## Project Overview\n\nTest\n\n## Architecture\n\nTest\n\n## Technology Stack\n\nTest\n\n## Conventions\n\nTest\n\n## Quality Standards\n\nTest\n\n## Boundaries\n\n### Never Modify Without Approval\n\n- none\n\n### Never Do\n\n- none\n\n### Requires Discussion\n\n- none\n\n## Commands\n\n### Development\n\n\`\`\`bash\ntest    # test\n\`\`\`\n\n### Quality Checks\n\n\`\`\`bash\ntest    # test\n\`\`\`\n\n### Build & Deploy\n\n\`\`\`bash\ntest    # test\n\`\`\``);
+      await writeFile(join(aiDir, 'roles', 'developer.md'), `# Role: Developer\n\n## Identity\n\nDev.\n\n## Expertise\n\n- Code\n\n## Responsibilities\n\n- Code\n\n## Constraints\n\n- None\n\n## Quality Criteria\n\n- Works`);
+
+      const taskContent = `# TASK\n\n## Goal\n\nTest skill filtering.\n\n## Task Type\n\ncomponent\n\n## Suggested Roles\n\n- developer\n\n## Scope\n\n### Allowed\n\n- \`src/**\`\n\n### Forbidden\n\n- none\n\n## Requirements\n\nN/A\n\n## Definition of Done\n\n- [ ] Done`;
+      const taskPath = join(aiDir, 'tasks', 'skill-filter.md');
+      await writeFile(taskPath, taskContent);
+
+      // Create multiple skills — only aidf-developer should be loaded
+      const skillsDir = join(aiDir, 'skills');
+      await mkdir(join(skillsDir, 'aidf-developer'), { recursive: true });
+      await mkdir(join(skillsDir, 'aidf-architect'), { recursive: true });
+      await mkdir(join(skillsDir, 'aidf-tester'), { recursive: true });
+
+      await writeFile(join(skillsDir, 'aidf-developer', 'SKILL.md'), `---\nname: aidf-developer\ndescription: Developer skill\n---\n\n# Developer instructions`);
+      await writeFile(join(skillsDir, 'aidf-architect', 'SKILL.md'), `---\nname: aidf-architect\ndescription: Architect skill\n---\n\n# Architect instructions`);
+      await writeFile(join(skillsDir, 'aidf-tester', 'SKILL.md'), `---\nname: aidf-tester\ndescription: Tester skill\n---\n\n# Tester instructions`);
+
+      const loader = new ContextLoader(testDir);
+      const context = await loader.loadContext(taskPath, { enabled: true });
+
+      // Only the developer skill should be loaded
+      expect(context.skills).toBeDefined();
+      expect(context.skills).toHaveLength(1);
+      expect(context.skills![0].metadata.name).toBe('aidf-developer');
+    });
+
+    it('should return no skills when role has no matching skill', async () => {
+      await writeFile(join(aiDir, 'AGENTS.md'), `# AGENTS.md\n\n## Project Overview\n\nTest\n\n## Architecture\n\nTest\n\n## Technology Stack\n\nTest\n\n## Conventions\n\nTest\n\n## Quality Standards\n\nTest\n\n## Boundaries\n\n### Never Modify Without Approval\n\n- none\n\n### Never Do\n\n- none\n\n### Requires Discussion\n\n- none\n\n## Commands\n\n### Development\n\n\`\`\`bash\ntest    # test\n\`\`\`\n\n### Quality Checks\n\n\`\`\`bash\ntest    # test\n\`\`\`\n\n### Build & Deploy\n\n\`\`\`bash\ntest    # test\n\`\`\``);
+      await writeFile(join(aiDir, 'roles', 'developer.md'), `# Role: Developer\n\n## Identity\n\nDev.\n\n## Expertise\n\n- Code\n\n## Responsibilities\n\n- Code\n\n## Constraints\n\n- None\n\n## Quality Criteria\n\n- Works`);
+
+      const taskContent = `# TASK\n\n## Goal\n\nTest no matching skill.\n\n## Task Type\n\ncomponent\n\n## Suggested Roles\n\n- developer\n\n## Scope\n\n### Allowed\n\n- \`src/**\`\n\n### Forbidden\n\n- none\n\n## Requirements\n\nN/A\n\n## Definition of Done\n\n- [ ] Done`;
+      const taskPath = join(aiDir, 'tasks', 'no-skill.md');
+      await writeFile(taskPath, taskContent);
+
+      // Create only architect skill — no match for developer role
+      const skillsDir = join(aiDir, 'skills');
+      await mkdir(join(skillsDir, 'aidf-architect'), { recursive: true });
+      await writeFile(join(skillsDir, 'aidf-architect', 'SKILL.md'), `---\nname: aidf-architect\ndescription: Architect skill\n---\n\n# Architect instructions`);
+
+      const loader = new ContextLoader(testDir);
+      const context = await loader.loadContext(taskPath, { enabled: true });
+
+      // No matching skill → skills should be undefined
+      expect(context.skills).toBeUndefined();
+    });
+
     it('should default to developer role when no role suggested', async () => {
       const agentsContent = `# AGENTS.md
 
@@ -976,5 +1025,159 @@ N/A
 
       expect(task.blockedStatus).toBeUndefined();
     });
+  });
+});
+
+describe('estimateTokens', () => {
+  it('should estimate tokens as chars / 4', () => {
+    expect(estimateTokens('abcd')).toBe(1);
+    expect(estimateTokens('abcdefgh')).toBe(2);
+    expect(estimateTokens('ab')).toBe(1); // ceil(2/4) = 1
+  });
+
+  it('should handle empty string', () => {
+    expect(estimateTokens('')).toBe(0);
+  });
+
+  it('should round up for non-divisible lengths', () => {
+    expect(estimateTokens('abcde')).toBe(2); // ceil(5/4) = 2
+    expect(estimateTokens('a')).toBe(1); // ceil(1/4) = 1
+  });
+});
+
+describe('estimateContextSize', () => {
+  it('should calculate breakdown for all context layers', () => {
+    const context: LoadedContext = {
+      agents: {
+        projectOverview: '',
+        architecture: '',
+        technologyStack: '',
+        conventions: '',
+        qualityStandards: '',
+        boundaries: { neverModify: [], neverDo: [], requiresDiscussion: [] },
+        commands: { development: {}, quality: {}, build: {} },
+        raw: 'a'.repeat(400), // 100 tokens
+      },
+      role: {
+        name: 'developer',
+        identity: '',
+        expertise: [],
+        responsibilities: [],
+        constraints: [],
+        qualityCriteria: [],
+        raw: 'b'.repeat(200), // 50 tokens
+      },
+      task: {
+        filePath: '/test.md',
+        goal: 'Test',
+        taskType: 'component',
+        suggestedRoles: ['developer'],
+        scope: { allowed: ['**'], forbidden: [] },
+        requirements: '',
+        definitionOfDone: [],
+        raw: 'c'.repeat(100), // 25 tokens
+      },
+      plan: 'd'.repeat(80), // 20 tokens
+      skills: [
+        {
+          name: 'skill1',
+          path: '/skill1',
+          source: 'project',
+          metadata: { name: 'skill1', description: 'test' },
+          content: 'e'.repeat(120), // 30 tokens
+        },
+      ],
+    };
+
+    const result = estimateContextSize(context);
+
+    expect(result.breakdown.agents).toBe(100);
+    expect(result.breakdown.role).toBe(50);
+    expect(result.breakdown.task).toBe(25);
+    expect(result.breakdown.plan).toBe(20);
+    expect(result.breakdown.skills).toBe(30);
+    expect(result.total).toBe(225);
+  });
+
+  it('should handle missing optional layers', () => {
+    const context: LoadedContext = {
+      agents: {
+        projectOverview: '',
+        architecture: '',
+        technologyStack: '',
+        conventions: '',
+        qualityStandards: '',
+        boundaries: { neverModify: [], neverDo: [], requiresDiscussion: [] },
+        commands: { development: {}, quality: {}, build: {} },
+        raw: 'a'.repeat(40), // 10 tokens
+      },
+      role: {
+        name: 'developer',
+        identity: '',
+        expertise: [],
+        responsibilities: [],
+        constraints: [],
+        qualityCriteria: [],
+        raw: 'b'.repeat(20), // 5 tokens
+      },
+      task: {
+        filePath: '/test.md',
+        goal: 'Test',
+        taskType: 'component',
+        suggestedRoles: ['developer'],
+        scope: { allowed: ['**'], forbidden: [] },
+        requirements: '',
+        definitionOfDone: [],
+        raw: 'c'.repeat(8), // 2 tokens
+      },
+    };
+
+    const result = estimateContextSize(context);
+
+    expect(result.breakdown.plan).toBe(0);
+    expect(result.breakdown.skills).toBe(0);
+    expect(result.total).toBe(17);
+  });
+
+  it('should sum multiple skills', () => {
+    const context: LoadedContext = {
+      agents: {
+        projectOverview: '',
+        architecture: '',
+        technologyStack: '',
+        conventions: '',
+        qualityStandards: '',
+        boundaries: { neverModify: [], neverDo: [], requiresDiscussion: [] },
+        commands: { development: {}, quality: {}, build: {} },
+        raw: '',
+      },
+      role: {
+        name: 'dev',
+        identity: '',
+        expertise: [],
+        responsibilities: [],
+        constraints: [],
+        qualityCriteria: [],
+        raw: '',
+      },
+      task: {
+        filePath: '/t.md',
+        goal: 'T',
+        taskType: 'component',
+        suggestedRoles: [],
+        scope: { allowed: [], forbidden: [] },
+        requirements: '',
+        definitionOfDone: [],
+        raw: '',
+      },
+      skills: [
+        { name: 's1', path: '/s1', source: 'project', metadata: { name: 's1', description: '' }, content: 'x'.repeat(40) },
+        { name: 's2', path: '/s2', source: 'global', metadata: { name: 's2', description: '' }, content: 'y'.repeat(80) },
+      ],
+    };
+
+    const result = estimateContextSize(context);
+
+    expect(result.breakdown.skills).toBe(30); // 10 + 20
   });
 });

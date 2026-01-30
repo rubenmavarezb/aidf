@@ -5,6 +5,31 @@
 
 ---
 
+## AIDF Framework
+
+This project uses **AIDF v1.0** (AI Development Framework) to provide structured context for AI assistants.
+
+### Context Layers
+
+| Layer | Source | Purpose |
+|-------|--------|---------|
+| **Layer 1 — Global** | `AGENTS.md` (this file) | Project identity, architecture, conventions, quality gates, boundaries |
+| **Layer 2 — Role** | `.ai/roles/*.md` | Specialized expertise and behavior rules |
+| **Layer 3 — Skill** | `.ai/skills/*.md` | Portable skill definitions and instructions |
+| **Layer 4 — Task** | `.ai/tasks/*.md` | Exact scope (allowed/forbidden files), requirements, definition of done |
+| **Layer 5 — Plan** | `.ai/plans/*.md` | Multi-task initiatives and sequencing |
+
+**How layers combine:** Project conventions (Layer 1) + role expertise (Layer 2) + skill context (Layer 3) + task scope (Layer 4) = precise execution instructions.
+
+### Navigation Guide
+
+- **Starting a task?** → Read this file first, then your role in `roles/`, then the task in `tasks/`
+- **Choosing a role?** → See `ROLES.md` for the quick reference matrix
+- **Creating a task?** → Use templates in `templates/`
+- **Framework docs:** https://rubenmavarezb.github.io/aidf/docs/concepts/
+
+---
+
 ## Identity
 
 This project is [PROJECT_NAME], a [TYPE: web app | mobile app | API | library | CLI tool] that [PRIMARY_PURPOSE].

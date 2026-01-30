@@ -3,7 +3,7 @@
 import { readFile } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join, dirname } from 'path';
-import type { LoadedContext, ParsedTask, ParsedRole, ParsedAgents, TaskScope, BlockedStatus, SkillsConfig, LoadedSkill } from '../types/index.js';
+import type { LoadedContext, ParsedTask, ParsedRole, ParsedAgents, TaskScope, BlockedStatus, SkillsConfig, LoadedSkill, ContextBreakdown } from '../types/index.js';
 import { SkillLoader } from './skill-loader.js';
 
 export class ContextLoader {
@@ -46,7 +46,13 @@ export class ContextLoader {
         );
         const loadedSkills = await skillLoader.loadAll();
         if (loadedSkills.length > 0) {
-          skills = loadedSkills;
+          // Filter skills by the task's role to reduce prompt token usage.
+          // Only include the skill matching the assigned role (e.g., developer → aidf-developer).
+          const roleSkillName = `aidf-${roleName}`;
+          const filtered = loadedSkills.filter(s =>
+            s.metadata.name === roleSkillName
+          );
+          skills = filtered.length > 0 ? filtered : undefined;
         }
       } catch {
         // Skills are optional — don't fail context loading
@@ -318,6 +324,33 @@ export class ContextLoader {
       build: extractCommandBlock('Build & Deploy'),
     };
   }
+}
+
+/**
+ * Estimates token count from a string (1 token ≈ 4 characters)
+ */
+export function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4);
+}
+
+/**
+ * Calculates context size breakdown by layer
+ */
+export function estimateContextSize(context: LoadedContext): { total: number; breakdown: ContextBreakdown } {
+  const agents = estimateTokens(context.agents.raw);
+  const role = estimateTokens(context.role.raw);
+  const task = estimateTokens(context.task.raw);
+  const plan = context.plan ? estimateTokens(context.plan) : 0;
+  const skills = context.skills
+    ? context.skills.reduce((sum, s) => sum + estimateTokens(s.content), 0)
+    : 0;
+
+  const total = agents + role + task + plan + skills;
+
+  return {
+    total,
+    breakdown: { agents, role, task, plan, skills },
+  };
 }
 
 export async function loadContext(taskPath: string, skillsConfig?: SkillsConfig): Promise<LoadedContext> {

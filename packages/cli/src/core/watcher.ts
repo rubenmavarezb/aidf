@@ -11,9 +11,12 @@ import type {
   WatcherState,
   WatcherStatus,
   ExecutorResult,
+  PhaseEvent,
+  ExecutorState,
 } from '../types/index.js';
 import { executeTask } from './executor.js';
 import { Logger } from '../utils/logger.js';
+import { LiveStatus } from '../utils/live-status.js';
 import { NotificationService } from '../utils/notifications.js';
 
 const CONFIG_FILES = ['config.yml', 'config.yaml', 'config.json'];
@@ -81,7 +84,7 @@ export class Watcher {
 
     this.logger.box('Watch Mode', [
       `Project: ${this.projectRoot}`,
-      `Watching: .ai/tasks/*.md`,
+      `Watching: .ai/tasks/pending/*.md, .ai/tasks/*.md`,
       `Debounce: ${this.options.debounceMs}ms`,
       `Dry run: ${this.options.dryRun}`,
       '',
@@ -145,9 +148,15 @@ export class Watcher {
 
   private setupFileWatcher(): void {
     const tasksDir = join(this.projectRoot, '.ai', 'tasks');
+    const pendingDir = join(tasksDir, 'pending');
     const configPatterns = CONFIG_FILES.map(f => join(this.projectRoot, '.ai', f));
 
-    const watchPaths = [join(tasksDir, '*.md'), ...configPatterns];
+    // Watch pending/ primarily, but also tasks/ root for backward compat
+    const watchPaths = [
+      join(pendingDir, '*.md'),
+      join(tasksDir, '*.md'),
+      ...configPatterns,
+    ];
 
     this.fileWatcher = chokidar.watch(watchPaths, {
       ignoreInitial: true,
@@ -174,6 +183,24 @@ export class Watcher {
   }
 
   private handleFileChange(eventType: string, filePath: string): void {
+    // Skip changes to the currently executing task — the executor writes status
+    // updates to the task file, which should not be reported as "Task modified"
+    if (this.state.currentTask === filePath) {
+      this.logger.debug(`Ignoring change to currently executing task: ${basename(filePath)}`);
+      return;
+    }
+
+    // When another task is executing, skip changes to previously processed
+    // tasks — when the executor writes COMPLETED/BLOCKED status to a finished
+    // task file, chokidar detects the change and would log
+    // "Task modified: <previous-task>" while the next task is already running,
+    // which is confusing. When no task is executing, allow changes through so
+    // user edits to blocked tasks can trigger re-execution.
+    if (eventType === 'change' && this.state.currentTask && this.state.processedTasks.has(filePath)) {
+      this.logger.debug(`Skipping change to already-processed task: ${basename(filePath)}`);
+      return;
+    }
+
     // Per-file debounce
     const existing = this.debounceTimers.get(filePath);
     if (existing) {
@@ -270,13 +297,38 @@ export class Watcher {
     this.state.tasksExecuted++;
     this.logger.info(`Executing task: ${basename(taskPath)}`);
 
+    const maxIterations = this.options.maxIterations ?? 50;
+    const liveStatus = new LiveStatus(maxIterations, this.options.quiet);
+    liveStatus.start();
+
     try {
       const result = await executeTask(taskPath, {
         dryRun: this.options.dryRun,
         verbose: this.options.verbose,
         maxIterations: this.options.maxIterations,
+        onPhase: (event: PhaseEvent) => {
+          if (event.phase === 'Starting iteration') {
+            liveStatus.iterationStart(event.iteration, event.totalIterations);
+          } else if (event.phase === 'Scope violation' || event.phase === 'Validation failed') {
+            liveStatus.phaseFailed(event.phase);
+          } else {
+            liveStatus.setPhase(event);
+          }
+        },
+        onOutput: (chunk: string) => {
+          liveStatus.handleOutput(chunk);
+        },
+        onIteration: (state: ExecutorState) => {
+          liveStatus.iterationEnd(
+            state.iteration,
+            state.filesModified.length,
+            true
+          );
+        },
         // No onAskUser in watch mode -- fully autonomous
       });
+
+      liveStatus.complete();
 
       // Record mtime for re-execution prevention
       try {
@@ -288,6 +340,7 @@ export class Watcher {
 
       return result;
     } catch (error) {
+      liveStatus.complete();
       return {
         success: false,
         status: 'failed',
@@ -367,11 +420,28 @@ export class Watcher {
     }
 
     try {
-      const files = await readdir(tasksDir);
-      const taskFiles = files
-        .filter(f => f.endsWith('.md') && !f.startsWith('.'))
-        .sort()
-        .map(f => join(tasksDir, f));
+      const taskFiles: string[] = [];
+
+      // Scan pending/ first
+      const pendingDir = join(tasksDir, 'pending');
+      if (existsSync(pendingDir)) {
+        const pendingFiles = await readdir(pendingDir);
+        taskFiles.push(
+          ...pendingFiles
+            .filter(f => f.endsWith('.md') && !f.startsWith('.'))
+            .sort()
+            .map(f => join(pendingDir, f))
+        );
+      }
+
+      // Also scan tasks/ root for backward compatibility
+      const rootFiles = await readdir(tasksDir);
+      taskFiles.push(
+        ...rootFiles
+          .filter(f => f.endsWith('.md') && !f.startsWith('.'))
+          .sort()
+          .map(f => join(tasksDir, f))
+      );
 
       let enqueued = 0;
       for (const taskPath of taskFiles) {
