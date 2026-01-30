@@ -7,6 +7,7 @@ import { simpleGit } from 'simple-git';
 import chalk from 'chalk';
 import { Logger } from '../utils/logger.js';
 import { ContextLoader } from '../core/context-loader.js';
+import { normalizeConfig } from '../utils/config.js';
 import type { StatusData, TaskStats, LastExecution, AidfConfig } from '../types/index.js';
 
 export function createStatusCommand(): Command {
@@ -320,10 +321,10 @@ async function loadConfig(projectRoot: string): Promise<AidfConfig> {
   for (const configPath of possiblePaths) {
     if (fs.existsSync(configPath)) {
       const content = await (await import('fs/promises')).readFile(configPath, 'utf-8');
-      if (configPath.endsWith('.json')) {
-        return JSON.parse(content);
-      }
-      return yaml.parse(content);
+      const raw = configPath.endsWith('.json')
+        ? JSON.parse(content)
+        : yaml.parse(content);
+      return normalizeConfig(raw);
     }
   }
 

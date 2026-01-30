@@ -17,7 +17,7 @@ import { ScopeGuard } from './safety.js';
 import { Validator } from './validator.js';
 import { Logger } from '../utils/logger.js';
 import { NotificationService } from '../utils/notifications.js';
-import { resolveConfig, detectPlaintextSecrets } from '../utils/config.js';
+import { resolveConfig, detectPlaintextSecrets, normalizeConfig } from '../utils/config.js';
 import { moveTaskFile } from '../utils/files.js';
 
 export class Executor {
@@ -955,10 +955,11 @@ async function loadConfig(configPath: string): Promise<AidfConfig> {
 
   const content = await fs.readFile(configPath, 'utf-8');
 
-  if (configPath.endsWith('.json')) {
-    return JSON.parse(content);
-  }
-  return yaml.parse(content);
+  const raw = configPath.endsWith('.json')
+    ? JSON.parse(content)
+    : yaml.parse(content);
+
+  return normalizeConfig(raw);
 }
 
 function getDefaultConfig(): AidfConfig {
