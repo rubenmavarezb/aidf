@@ -552,3 +552,84 @@ describe('findAndLoadConfig', () => {
     expect(config.permissions.auto_commit).toBe(true);
   });
 });
+
+describe('config integration: init → normalizeConfig → Executor options', () => {
+  it('should correctly propagate autoCommit=false through the full pipeline (legacy format)', () => {
+    // Simulates what `aidf init` generates with the old behavior-based format
+    const initOutput = {
+      framework: 'aidf',
+      version: '1.0',
+      project: { name: 'test', type: 'cli', description: 'test' },
+      provider: { type: 'claude-cli' },
+      behavior: { scopeEnforcement: 'strict', autoCommit: false },
+      validation: {
+        lint: 'pnpm lint',
+        typecheck: 'pnpm typecheck',
+        test: 'pnpm test',
+        build: 'pnpm build',
+      },
+    };
+
+    const config = normalizeConfig(initOutput);
+
+    // These are the exact paths the Executor constructor reads:
+    expect(config.permissions?.auto_commit ?? true).toBe(false);
+    expect(config.permissions?.scope_enforcement ?? 'ask').toBe('strict');
+    expect(config.execution?.max_iterations ?? 50).toBe(50);
+    expect(config.validation?.pre_commit).toEqual(['pnpm lint', 'pnpm typecheck']);
+    expect(config.validation?.pre_push).toEqual(['pnpm test']);
+    expect(config.validation?.pre_pr).toEqual(['pnpm build']);
+  });
+
+  it('should correctly propagate autoCommit=false through the full pipeline (new format)', () => {
+    // Simulates what current `aidf init` generates (new permissions-based format)
+    const initOutput = {
+      framework: 'aidf',
+      version: 1,
+      project: { name: 'test', type: 'cli', description: 'test' },
+      provider: { type: 'claude-cli' },
+      permissions: {
+        scope_enforcement: 'ask',
+        auto_commit: false,
+        auto_push: false,
+        auto_pr: false,
+      },
+      validation: {
+        pre_commit: ['pnpm lint'],
+        pre_push: ['pnpm test'],
+        pre_pr: [],
+      },
+    };
+
+    const config = normalizeConfig(initOutput);
+
+    // Same paths the Executor reads:
+    expect(config.permissions?.auto_commit ?? true).toBe(false);
+    expect(config.permissions?.auto_push ?? false).toBe(false);
+    expect(config.permissions?.scope_enforcement ?? 'ask').toBe('ask');
+  });
+
+  it('should default autoCommit to true when not specified', () => {
+    const minimalConfig = {
+      version: 1,
+      provider: { type: 'claude-cli' },
+    };
+
+    const config = normalizeConfig(minimalConfig);
+
+    // Executor defaults: config.permissions?.auto_commit ?? true
+    expect(config.permissions?.auto_commit ?? true).toBe(true);
+  });
+
+  it('should not let behavior.autoCommit override explicit permissions.auto_commit', () => {
+    const conflictingConfig = {
+      behavior: { autoCommit: true },
+      permissions: { auto_commit: false, scope_enforcement: 'strict', auto_push: false, auto_pr: false },
+    };
+
+    const config = normalizeConfig(conflictingConfig);
+
+    // permissions.auto_commit should win
+    expect(config.permissions?.auto_commit ?? true).toBe(false);
+  });
+});
