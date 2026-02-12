@@ -15,12 +15,11 @@ vi.mock('fs/promises', () => ({
   stat: vi.fn(),
 }));
 
-const mockExistsSync = vi.fn();
 vi.mock('fs', async () => {
   const actual = await vi.importActual('fs');
   return {
     ...actual,
-    existsSync: mockExistsSync,
+    existsSync: vi.fn(),
   };
 });
 
@@ -38,7 +37,10 @@ vi.mock('../utils/logger.js', () => ({
 // Import mocked modules
 import { ContextLoader } from '../core/context-loader.js';
 import { readdir, readFile, stat } from 'fs/promises';
+import { existsSync } from 'fs';
 import { simpleGit } from 'simple-git';
+
+const mockExistsSync = vi.mocked(existsSync);
 describe('status command', () => {
   const mockProjectRoot = '/test/project';
 
@@ -100,8 +102,8 @@ describe('status command', () => {
 
   describe('getProviderConfig', () => {
     it('should load config from yaml file', async () => {
-      mockExistsSync.mockImplementation((p: string) => {
-        return p.includes('config.yml') || p.includes('config.yaml');
+      mockExistsSync.mockImplementation((p) => {
+        return String(p).includes('config.yml') || String(p).includes('config.yaml');
       });
       
       (readFile as any).mockResolvedValue('provider:\n  type: anthropic-api\n  model: claude-3-opus');

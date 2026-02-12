@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { resolveConfigValue, resolveConfig, detectPlaintextSecrets, normalizeConfig } from './config.js';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { resolveConfigValue, resolveConfig, detectPlaintextSecrets, normalizeConfig, findConfigFile, getDefaultConfig, loadConfigFromFile, findAndLoadConfig } from './config.js';
 
 describe('resolveConfigValue', () => {
   const originalEnv = process.env;
@@ -456,5 +456,99 @@ describe('normalizeConfig', () => {
     expect(result.permissions.auto_push).toBe(false);
     expect(result.permissions.auto_pr).toBe(false);
     expect(result.permissions.scope_enforcement).toBe('ask');
+  });
+});
+
+describe('getDefaultConfig', () => {
+  it('should return a valid default config', () => {
+    const config = getDefaultConfig();
+    expect(config.version).toBe(1);
+    expect(config.provider.type).toBe('claude-cli');
+    expect(config.execution.max_iterations).toBe(50);
+    expect(config.permissions.auto_commit).toBe(true);
+    expect(config.permissions.scope_enforcement).toBe('ask');
+    expect(config.validation.pre_commit).toEqual([]);
+    expect(config.git?.commit_prefix).toBe('aidf:');
+  });
+});
+
+describe('findConfigFile', () => {
+  it('should return null when no config file exists', () => {
+    const result = findConfigFile('/nonexistent/path');
+    expect(result).toBeNull();
+  });
+
+  it('should find config.yml in .ai directory', () => {
+    const result = findConfigFile(process.cwd());
+    // This test runs against the actual repo which has .ai/config.yml
+    if (result) {
+      expect(result).toContain('.ai');
+      expect(result).toMatch(/config\.(yml|yaml|json)$/);
+    }
+  });
+});
+
+describe('loadConfigFromFile', () => {
+  it('should load and normalize a YAML config', async () => {
+    const { writeFileSync, mkdirSync, rmSync } = await import('fs');
+    const { join } = await import('path');
+    const tmpDir = join(process.cwd(), '.test-config-tmp');
+    const configPath = join(tmpDir, 'config.yml');
+
+    try {
+      mkdirSync(tmpDir, { recursive: true });
+      writeFileSync(configPath, `
+version: 1
+provider:
+  type: anthropic-api
+permissions:
+  auto_commit: false
+  scope_enforcement: strict
+validation:
+  pre_commit:
+    - pnpm lint
+  pre_push:
+    - pnpm test
+  pre_pr: []
+`);
+
+      const config = await loadConfigFromFile(configPath);
+      expect(config.provider.type).toBe('anthropic-api');
+      expect(config.permissions.auto_commit).toBe(false);
+      expect(config.validation.pre_commit).toEqual(['pnpm lint']);
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('should load and normalize a JSON config', async () => {
+    const { writeFileSync, mkdirSync, rmSync } = await import('fs');
+    const { join } = await import('path');
+    const tmpDir = join(process.cwd(), '.test-config-tmp');
+    const configPath = join(tmpDir, 'config.json');
+
+    try {
+      mkdirSync(tmpDir, { recursive: true });
+      writeFileSync(configPath, JSON.stringify({
+        version: 1,
+        provider: { type: 'openai-api' },
+        behavior: { autoCommit: false },
+      }));
+
+      const config = await loadConfigFromFile(configPath);
+      expect(config.provider.type).toBe('openai-api');
+      expect(config.permissions.auto_commit).toBe(false);
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('findAndLoadConfig', () => {
+  it('should return default config for nonexistent path', async () => {
+    const config = await findAndLoadConfig('/nonexistent/path');
+    expect(config.version).toBe(1);
+    expect(config.provider.type).toBe('claude-cli');
+    expect(config.permissions.auto_commit).toBe(true);
   });
 });

@@ -100,41 +100,44 @@ export function processTemplate(
   writeFileSync(filePath, content);
 }
 
-/**
- * Detect validation commands from package.json
- */
-export interface DetectedCommands {
-  lint?: string;
-  test?: string;
-  build?: string;
-  typecheck?: string;
-  format?: string;
+export interface DetectedValidation {
+  pre_commit: string[];
+  pre_push: string[];
+  pre_pr: string[];
 }
 
-export function detectValidationCommands(projectPath: string): DetectedCommands {
+/**
+ * Detect validation commands from package.json and map them
+ * directly to validation phases (pre_commit, pre_push, pre_pr).
+ */
+export function detectValidationCommands(projectPath: string): DetectedValidation {
+  const result: DetectedValidation = { pre_commit: [], pre_push: [], pre_pr: [] };
   const packageJsonPath = join(projectPath, 'package.json');
-  const commands: DetectedCommands = {};
 
   if (!existsSync(packageJsonPath)) {
-    return commands;
+    return result;
   }
 
   try {
     const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
     const scripts = packageJson.scripts || {};
 
-    // Detect common script names
-    if (scripts.lint) commands.lint = 'npm run lint';
-    if (scripts.test) commands.test = 'npm run test';
-    if (scripts.build) commands.build = 'npm run build';
-    if (scripts.typecheck) commands.typecheck = 'npm run typecheck';
-    if (scripts['type-check']) commands.typecheck = 'npm run type-check';
-    if (scripts.format) commands.format = 'npm run format';
-    if (scripts.prettier) commands.format = 'npm run prettier';
+    // lint, typecheck, format → pre_commit
+    if (scripts.lint) result.pre_commit.push('npm run lint');
+    if (scripts.typecheck) result.pre_commit.push('npm run typecheck');
+    else if (scripts['type-check']) result.pre_commit.push('npm run type-check');
+    if (scripts.format) result.pre_commit.push('npm run format');
+    else if (scripts.prettier) result.pre_commit.push('npm run prettier');
 
-    return commands;
+    // test → pre_push
+    if (scripts.test) result.pre_push.push('npm run test');
+
+    // build → pre_pr
+    if (scripts.build) result.pre_pr.push('npm run build');
+
+    return result;
   } catch {
-    return commands;
+    return result;
   }
 }
 

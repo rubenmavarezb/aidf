@@ -7,8 +7,8 @@ import { simpleGit } from 'simple-git';
 import chalk from 'chalk';
 import { Logger } from '../utils/logger.js';
 import { ContextLoader } from '../core/context-loader.js';
-import { normalizeConfig } from '../utils/config.js';
-import type { StatusData, TaskStats, LastExecution, AidfConfig } from '../types/index.js';
+import { findAndLoadConfig } from '../utils/config.js';
+import type { StatusData, TaskStats, LastExecution } from '../types/index.js';
 
 export function createStatusCommand(): Command {
   const cmd = new Command('status')
@@ -121,7 +121,7 @@ export async function getLastExecution(projectRoot: string): Promise<LastExecuti
     // Try to load config to get commit prefix
     let commitPrefix = 'aidf:';
     try {
-      const config = await loadConfig(projectRoot);
+      const config = await findAndLoadConfig(projectRoot);
       commitPrefix = config.git?.commit_prefix || 'aidf:';
     } catch {
       // Use default
@@ -295,9 +295,9 @@ export async function getRecentFiles(projectRoot: string): Promise<string[]> {
 
 export async function getProviderConfig(projectRoot: string): Promise<{ type: string; model?: string }> {
   try {
-    const config = await loadConfig(projectRoot);
+    const config = await findAndLoadConfig(projectRoot);
     return {
-      type: config.provider.type || (config.provider as Record<string, unknown>).default as string || 'claude-cli',
+      type: config.provider.type || 'claude-cli',
       model: config.provider.model,
     };
   } catch {
@@ -306,53 +306,6 @@ export async function getProviderConfig(projectRoot: string): Promise<{ type: st
       type: 'claude-cli',
     };
   }
-}
-
-async function loadConfig(projectRoot: string): Promise<AidfConfig> {
-  const fs = await import('fs');
-  const yaml = await import('yaml');
-
-  const possiblePaths = [
-    join(projectRoot, '.ai', 'config.yml'),
-    join(projectRoot, '.ai', 'config.yaml'),
-    join(projectRoot, '.ai', 'config.json'),
-  ];
-
-  for (const configPath of possiblePaths) {
-    if (fs.existsSync(configPath)) {
-      const content = await (await import('fs/promises')).readFile(configPath, 'utf-8');
-      const raw = configPath.endsWith('.json')
-        ? JSON.parse(content)
-        : yaml.parse(content);
-      return normalizeConfig(raw);
-    }
-  }
-
-  // Return default config
-  return {
-    version: 1,
-    provider: { type: 'claude-cli' },
-    execution: {
-      max_iterations: 50,
-      max_consecutive_failures: 3,
-      timeout_per_iteration: 300,
-    },
-    permissions: {
-      scope_enforcement: 'ask',
-      auto_commit: true,
-      auto_push: false,
-      auto_pr: false,
-    },
-    validation: {
-      pre_commit: [],
-      pre_push: [],
-      pre_pr: [],
-    },
-    git: {
-      commit_prefix: 'aidf:',
-      branch_prefix: 'aidf/',
-    },
-  };
 }
 
 export function printStatusTable(data: StatusData, logger: Logger): void {
