@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { Mock } from 'vitest';
 import { AnthropicApiProvider, createAnthropicApiProvider } from './anthropic-api.js';
 
 // Mock the Anthropic SDK
@@ -28,6 +29,14 @@ vi.mock('fs', () => ({
 vi.mock('glob', () => ({
   glob: vi.fn(() => Promise.resolve(['file1.ts', 'file2.ts'])),
 }));
+
+/** Helper to inject a mock into the private Anthropic client */
+function setMockCreate(provider: AnthropicApiProvider, mockCreate: Mock): void {
+  const providerWithClient = provider as unknown as {
+    client: { messages: { create: Mock } };
+  };
+  providerWithClient.client.messages.create = mockCreate;
+}
 
 describe('AnthropicApiProvider', () => {
   let provider: AnthropicApiProvider;
@@ -84,7 +93,7 @@ describe('AnthropicApiProvider', () => {
         stop_reason: 'tool_use',
       });
 
-      (provider as any).client.messages.create = mockCreate;
+      setMockCreate(provider, mockCreate);
 
       const result = await provider.execute('Test prompt');
 
@@ -106,7 +115,7 @@ describe('AnthropicApiProvider', () => {
         stop_reason: 'tool_use',
       });
 
-      (provider as any).client.messages.create = mockCreate;
+      setMockCreate(provider, mockCreate);
 
       const result = await provider.execute('Test prompt');
 
@@ -116,7 +125,7 @@ describe('AnthropicApiProvider', () => {
 
     it('should handle API errors gracefully', async () => {
       const mockCreate = vi.fn().mockRejectedValue(new Error('API Error'));
-      (provider as any).client.messages.create = mockCreate;
+      setMockCreate(provider, mockCreate);
 
       const result = await provider.execute('Test prompt');
 
@@ -127,7 +136,7 @@ describe('AnthropicApiProvider', () => {
 
     it('should track files changed via write_file tool', async () => {
       const { writeFile } = await import('fs/promises');
-      (writeFile as any).mockResolvedValue(undefined);
+      vi.mocked(writeFile).mockResolvedValue(undefined);
 
       const mockCreate = vi.fn()
         .mockResolvedValueOnce({
@@ -153,7 +162,7 @@ describe('AnthropicApiProvider', () => {
           stop_reason: 'tool_use',
         });
 
-      (provider as any).client.messages.create = mockCreate;
+      setMockCreate(provider, mockCreate);
 
       const result = await provider.execute('Test prompt');
 
@@ -169,7 +178,7 @@ describe('AnthropicApiProvider', () => {
         stop_reason: 'end_turn',
       });
 
-      (provider as any).client.messages.create = mockCreate;
+      setMockCreate(provider, mockCreate);
 
       const result = await provider.execute('Test prompt');
 
@@ -183,7 +192,7 @@ describe('AnthropicApiProvider', () => {
         stop_reason: 'end_turn',
       });
 
-      (provider as any).client.messages.create = mockCreate;
+      setMockCreate(provider, mockCreate);
 
       await provider.execute('Test prompt', { model: 'claude-opus-4-20250514' });
 
@@ -200,7 +209,7 @@ describe('AnthropicApiProvider', () => {
         stop_reason: 'end_turn',
       });
 
-      (provider as any).client.messages.create = mockCreate;
+      setMockCreate(provider, mockCreate);
 
       await provider.execute('Test prompt', { maxTokens: 4096 });
 
@@ -220,7 +229,7 @@ describe('AnthropicApiProvider', () => {
         usage: { input_tokens: 100, output_tokens: 50 },
       });
 
-      (provider as any).client.messages.create = mockCreate;
+      setMockCreate(provider, mockCreate);
 
       const result = await provider.execute('Test prompt');
 
@@ -235,7 +244,7 @@ describe('AnthropicApiProvider', () => {
         usage: { input_tokens: 100, output_tokens: 50 },
       });
 
-      (provider as any).client.messages.create = mockCreate;
+      setMockCreate(provider, mockCreate);
 
       await provider.execute('First prompt');
 
@@ -258,7 +267,7 @@ describe('AnthropicApiProvider', () => {
         usage: { input_tokens: 100, output_tokens: 50 },
       });
 
-      (provider as any).client.messages.create = mockCreate;
+      setMockCreate(provider, mockCreate);
 
       await provider.execute('Continuation prompt', {
         conversationState: existingState,
@@ -274,7 +283,7 @@ describe('AnthropicApiProvider', () => {
 
     it('should return conversationState even on error', async () => {
       const mockCreate = vi.fn().mockRejectedValue(new Error('API Error'));
-      (provider as any).client.messages.create = mockCreate;
+      setMockCreate(provider, mockCreate);
 
       const result = await provider.execute('Test prompt');
 

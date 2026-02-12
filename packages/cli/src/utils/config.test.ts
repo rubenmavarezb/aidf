@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { resolveConfigValue, resolveConfig, detectPlaintextSecrets, normalizeConfig, findConfigFile, getDefaultConfig, loadConfigFromFile, findAndLoadConfig } from './config.js';
 
 describe('resolveConfigValue', () => {

@@ -41,27 +41,32 @@ import { existsSync } from 'fs';
 import { simpleGit } from 'simple-git';
 
 const mockExistsSync = vi.mocked(existsSync);
+// Overloaded fs/promises functions need explicit mock typing
+const mockReaddir = readdir as unknown as ReturnType<typeof vi.fn>;
+const mockReadFile = readFile as unknown as ReturnType<typeof vi.fn>;
+const mockStat = stat as unknown as ReturnType<typeof vi.fn>;
+const mockSimpleGit = simpleGit as unknown as ReturnType<typeof vi.fn>;
 describe('status command', () => {
   const mockProjectRoot = '/test/project';
 
   beforeEach(() => {
     vi.clearAllMocks();
-    (ContextLoader.findAiDir as any).mockReturnValue(mockProjectRoot);
+    vi.mocked(ContextLoader.findAiDir).mockReturnValue(mockProjectRoot);
     mockExistsSync.mockReturnValue(false);
   });
 
   describe('collectTaskStats', () => {
     it('should count tasks by status correctly', async () => {
       const { collectTaskStats } = await import('./status.js');
-      
-      (readdir as any).mockResolvedValue([
+
+      mockReaddir.mockResolvedValue([
         '001-pending-task.md',
         '002-completed-task.md',
         '003-blocked-task.md',
         '004-in-progress-task.md',
       ]);
 
-      (readFile as any)
+      mockReadFile
         .mockResolvedValueOnce('# TASK\n## Goal\nTest\n## Status: 🔵 Ready')
         .mockResolvedValueOnce('# TASK\n## Goal\nTest\n## Status: ✅ COMPLETED')
         .mockResolvedValueOnce('# TASK\n## Goal\nTest\n## Status: ⚠️ BLOCKED')
@@ -79,8 +84,8 @@ describe('status command', () => {
     it('should handle tasks without status section as pending', async () => {
       const { collectTaskStats } = await import('./status.js');
       
-      (readdir as any).mockResolvedValue(['001-no-status.md']);
-      (readFile as any).mockResolvedValue('# TASK\n## Goal\nTest task');
+      mockReaddir.mockResolvedValue(['001-no-status.md']);
+      mockReadFile.mockResolvedValue('# TASK\n## Goal\nTest task');
 
       const stats = await collectTaskStats(mockProjectRoot);
       
@@ -91,7 +96,7 @@ describe('status command', () => {
     it('should handle empty tasks directory', async () => {
       const { collectTaskStats } = await import('./status.js');
       
-      (readdir as any).mockRejectedValue(new Error('ENOENT'));
+      mockReaddir.mockRejectedValue(new Error('ENOENT'));
 
       const stats = await collectTaskStats(mockProjectRoot);
       
@@ -106,7 +111,7 @@ describe('status command', () => {
         return String(p).includes('config.yml') || String(p).includes('config.yaml');
       });
       
-      (readFile as any).mockResolvedValue('provider:\n  type: anthropic-api\n  model: claude-3-opus');
+      mockReadFile.mockResolvedValue('provider:\n  type: anthropic-api\n  model: claude-3-opus');
 
       const { getProviderConfig } = await import('./status.js');
       const provider = await getProviderConfig(mockProjectRoot);
@@ -129,13 +134,13 @@ describe('status command', () => {
       const mockGit = {
         raw: vi.fn().mockResolvedValue('abc123|2024-01-15T10:00:00Z|aidf: Test task'),
       };
-      (simpleGit as any).mockReturnValue(mockGit);
+      mockSimpleGit.mockReturnValue(mockGit);
 
       // Mock config loading - no config file
       mockExistsSync.mockReturnValue(false);
 
       // Mock tasks directory for fallback
-      (readdir as any).mockResolvedValue([]);
+      mockReaddir.mockResolvedValue([]);
 
       const { getLastExecution } = await import('./status.js');
       const execution = await getLastExecution(mockProjectRoot);
@@ -149,17 +154,17 @@ describe('status command', () => {
       const mockGit = {
         raw: vi.fn().mockResolvedValue(''),
       };
-      (simpleGit as any).mockReturnValue(mockGit);
+      mockSimpleGit.mockReturnValue(mockGit);
 
-      (readdir as any).mockResolvedValue(['001-task.md']);
-      (readFile as any).mockResolvedValue(`# TASK
+      mockReaddir.mockResolvedValue(['001-task.md']);
+      mockReadFile.mockResolvedValue(`# TASK
 ## Goal
 Test
 ## Status: ✅ COMPLETED
 
 - **Started:** 2024-01-15T10:00:00Z
 - **Duration:** 5m 30s`);
-      (stat as any).mockResolvedValue({ mtime: new Date('2024-01-15T10:00:00Z') });
+      mockStat.mockResolvedValue({ mtime: new Date('2024-01-15T10:00:00Z') });
 
       const { getLastExecution } = await import('./status.js');
       const execution = await getLastExecution(mockProjectRoot);
@@ -178,7 +183,7 @@ Test
           files: [{ path: 'src/file3.ts' }],
         }),
       };
-      (simpleGit as any).mockReturnValue(mockGit);
+      mockSimpleGit.mockReturnValue(mockGit);
 
       const { getRecentFiles } = await import('./status.js');
       const files = await getRecentFiles(mockProjectRoot);
@@ -193,7 +198,7 @@ Test
         raw: vi.fn().mockRejectedValue(new Error('Not a git repo')),
         status: vi.fn().mockRejectedValue(new Error('Not a git repo')),
       };
-      (simpleGit as any).mockReturnValue(mockGit);
+      mockSimpleGit.mockReturnValue(mockGit);
 
       const { getRecentFiles } = await import('./status.js');
       const files = await getRecentFiles(mockProjectRoot);
@@ -252,8 +257,8 @@ Test
     });
 
     it('should handle missing AIDF project', async () => {
-      (ContextLoader.findAiDir as any).mockReturnValue(null);
-      
+      vi.mocked(ContextLoader.findAiDir).mockReturnValue(null);
+
       const cmd = createStatusCommand();
 
       // Mock process.exit to prevent actual exit

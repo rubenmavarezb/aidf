@@ -151,7 +151,7 @@ export class Logger {
    */
   private formatTextLog(level: 'debug' | 'info' | 'warn' | 'error' | 'success', message: string): string {
     const prefixStr = this.prefix
-      ? (this.prefixColor ? (chalk as any)[this.prefixColor](`[${this.prefix}]`) : chalk.cyan(`[${this.prefix}]`)) + ' '
+      ? (this.prefixColor ? (chalk as unknown as Record<string, (s: string) => string>)[this.prefixColor](`[${this.prefix}]`) : chalk.cyan(`[${this.prefix}]`)) + ' '
       : '';
 
     switch (level) {
