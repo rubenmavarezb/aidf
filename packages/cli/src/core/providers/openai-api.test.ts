@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { OpenAiApiProvider, createOpenAiApiProvider } from './openai-api.js';
+import type { Mock } from 'vitest';
 
 // Mock the OpenAI SDK
 vi.mock('openai', () => {
@@ -30,6 +31,15 @@ vi.mock('fs', () => ({
 vi.mock('glob', () => ({
   glob: vi.fn(() => Promise.resolve(['file1.ts', 'file2.ts'])),
 }));
+
+/** Helper to inject a mock into the private OpenAI client */
+function setMockCreate(provider: OpenAiApiProvider, mockCreate: Mock): void {
+  // Access private client for test mock injection
+  const providerWithClient = provider as unknown as {
+    client: { chat: { completions: { create: Mock } } };
+  };
+  providerWithClient.client.chat.completions.create = mockCreate;
+}
 
 describe('OpenAiApiProvider', () => {
   let provider: OpenAiApiProvider;
@@ -88,7 +98,7 @@ describe('OpenAiApiProvider', () => {
         }],
       });
 
-      (provider as any).client.chat.completions.create = mockCreate;
+      setMockCreate(provider, mockCreate);
 
       const result = await provider.execute('Test prompt');
 
@@ -113,7 +123,7 @@ describe('OpenAiApiProvider', () => {
         }],
       });
 
-      (provider as any).client.chat.completions.create = mockCreate;
+      setMockCreate(provider, mockCreate);
 
       const result = await provider.execute('Test prompt');
 
@@ -123,7 +133,7 @@ describe('OpenAiApiProvider', () => {
 
     it('should handle API errors gracefully', async () => {
       const mockCreate = vi.fn().mockRejectedValue(new Error('API Error'));
-      (provider as any).client.chat.completions.create = mockCreate;
+      setMockCreate(provider, mockCreate);
 
       const result = await provider.execute('Test prompt');
 
@@ -137,7 +147,7 @@ describe('OpenAiApiProvider', () => {
         choices: [],
       });
 
-      (provider as any).client.chat.completions.create = mockCreate;
+      setMockCreate(provider, mockCreate);
 
       const result = await provider.execute('Test prompt');
 
@@ -147,7 +157,7 @@ describe('OpenAiApiProvider', () => {
 
     it('should track files changed via write_file tool', async () => {
       const { writeFile } = await import('fs/promises');
-      (writeFile as any).mockResolvedValue(undefined);
+      vi.mocked(writeFile).mockResolvedValue(undefined);
 
       const mockCreate = vi.fn()
         .mockResolvedValueOnce({
@@ -179,7 +189,7 @@ describe('OpenAiApiProvider', () => {
           }],
         });
 
-      (provider as any).client.chat.completions.create = mockCreate;
+      setMockCreate(provider, mockCreate);
 
       const result = await provider.execute('Test prompt');
 
@@ -196,7 +206,7 @@ describe('OpenAiApiProvider', () => {
         }],
       });
 
-      (provider as any).client.chat.completions.create = mockCreate;
+      setMockCreate(provider, mockCreate);
 
       const result = await provider.execute('Test prompt');
 
@@ -210,7 +220,7 @@ describe('OpenAiApiProvider', () => {
         }],
       });
 
-      (provider as any).client.chat.completions.create = mockCreate;
+      setMockCreate(provider, mockCreate);
 
       await provider.execute('Test prompt', { model: 'gpt-4-turbo' });
 
@@ -228,7 +238,7 @@ describe('OpenAiApiProvider', () => {
         }],
       });
 
-      (provider as any).client.chat.completions.create = mockCreate;
+      setMockCreate(provider, mockCreate);
 
       await provider.execute('Test prompt', { maxTokens: 2048 });
 
@@ -241,8 +251,8 @@ describe('OpenAiApiProvider', () => {
 
     it('should handle multiple tool calls in single response', async () => {
       const { writeFile, readFile } = await import('fs/promises');
-      (writeFile as any).mockResolvedValue(undefined);
-      (readFile as any).mockResolvedValue('file content');
+      vi.mocked(writeFile).mockResolvedValue(undefined);
+      (readFile as unknown as ReturnType<typeof vi.fn>).mockResolvedValue('file content');
 
       const mockCreate = vi.fn()
         .mockResolvedValueOnce({
@@ -283,7 +293,7 @@ describe('OpenAiApiProvider', () => {
           }],
         });
 
-      (provider as any).client.chat.completions.create = mockCreate;
+      setMockCreate(provider, mockCreate);
 
       const result = await provider.execute('Test prompt');
 
@@ -301,7 +311,7 @@ describe('OpenAiApiProvider', () => {
         usage: { prompt_tokens: 100, completion_tokens: 50 },
       });
 
-      (provider as any).client.chat.completions.create = mockCreate;
+      setMockCreate(provider, mockCreate);
 
       const result = await provider.execute('Test prompt');
 
@@ -316,7 +326,7 @@ describe('OpenAiApiProvider', () => {
         }],
       });
 
-      (provider as any).client.chat.completions.create = mockCreate;
+      setMockCreate(provider, mockCreate);
 
       await provider.execute('First prompt');
 
@@ -338,7 +348,7 @@ describe('OpenAiApiProvider', () => {
         }],
       });
 
-      (provider as any).client.chat.completions.create = mockCreate;
+      setMockCreate(provider, mockCreate);
 
       await provider.execute('Continuation prompt', {
         conversationState: existingState,
@@ -353,7 +363,7 @@ describe('OpenAiApiProvider', () => {
 
     it('should return conversationState even on error', async () => {
       const mockCreate = vi.fn().mockRejectedValue(new Error('API Error'));
-      (provider as any).client.chat.completions.create = mockCreate;
+      setMockCreate(provider, mockCreate);
 
       const result = await provider.execute('Test prompt');
 

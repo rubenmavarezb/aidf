@@ -49,7 +49,7 @@ vi.mock('../utils/logger.js', () => ({
 vi.mock('../utils/files.js', () => ({
   copyDir: vi.fn(),
   findTemplatesDir: vi.fn(() => '/mock/templates/.ai'),
-  detectValidationCommands: vi.fn(() => ({})),
+  detectValidationCommands: vi.fn(() => ({ pre_commit: [], pre_push: [], pre_pr: [] })),
   getProjectName: vi.fn(() => 'test-project'),
 }));
 

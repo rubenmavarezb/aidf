@@ -18,7 +18,12 @@ vi.mock('./context-loader.js', () => ({
 
 // Mock ContextLoader.findAiDir as static
 import { ContextLoader } from './context-loader.js';
-(ContextLoader as any).findAiDir = vi.fn(() => '/test/project');
+
+// ContextLoader is mocked — attach static method
+const MockedContextLoader = ContextLoader as unknown as ReturnType<typeof vi.fn> & {
+  findAiDir: ReturnType<typeof vi.fn>;
+};
+MockedContextLoader.findAiDir = vi.fn(() => '/test/project');
 
 import { executeTask } from './executor.js';
 
@@ -77,8 +82,8 @@ describe('ParallelExecutor', () => {
         return Promise.resolve(makeParsedTask({ filePath: taskPath }));
       }),
     };
-    (ContextLoader as any).mockImplementation(() => mockLoader);
-    (ContextLoader as any).findAiDir = vi.fn(() => '/test/project');
+    MockedContextLoader.mockImplementation(() => mockLoader);
+    MockedContextLoader.findAiDir = vi.fn(() => '/test/project');
   });
 
   describe('dependency detection', () => {
@@ -195,7 +200,7 @@ describe('ParallelExecutor', () => {
           }))
         ),
       };
-      (ContextLoader as any).mockImplementation(() => mockLoader);
+      MockedContextLoader.mockImplementation(() => mockLoader);
 
       const executor = new ParallelExecutor({ ...defaultOptions, concurrency: 2 });
       await executor.run([
@@ -347,7 +352,7 @@ describe('ParallelExecutor', () => {
 
   describe('file conflict detection', () => {
     it('should detect file conflicts between concurrent tasks', async () => {
-      (executeTask as Mock).mockImplementation(async (taskPath: string, options: any) => {
+      (executeTask as Mock).mockImplementation(async (taskPath: string, options?: { onIteration?: (state: Record<string, unknown>) => void }) => {
         // Simulate the first task reporting files modified
         if (options?.onIteration) {
           options.onIteration({
@@ -433,7 +438,7 @@ describe('ParallelExecutor', () => {
     });
 
     it('should fail if no AIDF project found', async () => {
-      (ContextLoader as any).findAiDir = vi.fn(() => null);
+      MockedContextLoader.findAiDir = vi.fn(() => null);
 
       const executor = new ParallelExecutor(defaultOptions);
       await expect(executor.run(['/test/tasks/task-a.md'])).rejects.toThrow(

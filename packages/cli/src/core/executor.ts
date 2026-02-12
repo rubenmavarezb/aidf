@@ -17,7 +17,7 @@ import { ScopeGuard } from './safety.js';
 import { Validator } from './validator.js';
 import { Logger } from '../utils/logger.js';
 import { NotificationService } from '../utils/notifications.js';
-import { resolveConfig, detectPlaintextSecrets, normalizeConfig } from '../utils/config.js';
+import { resolveConfig, detectPlaintextSecrets, findAndLoadConfig } from '../utils/config.js';
 import { moveTaskFile } from '../utils/files.js';
 
 export class Executor {
@@ -922,85 +922,7 @@ export async function executeTask(
   taskPath: string,
   options?: Partial<ExecutorOptions>
 ): Promise<ExecutorResult> {
-  // Cargar config
-  const configPath = await findConfigFile();
-  const config = configPath ? await loadConfig(configPath) : getDefaultConfig();
-
+  const config = await findAndLoadConfig();
   const executor = new Executor(config, options);
   return executor.run(taskPath);
-}
-
-// Helpers para config
-async function findConfigFile(): Promise<string | null> {
-  const fs = await import('fs');
-  const path = await import('path');
-
-  const possiblePaths = [
-    '.ai/config.yml',
-    '.ai/config.yaml',
-    '.ai/config.json',
-  ];
-
-  for (const p of possiblePaths) {
-    if (fs.existsSync(path.join(process.cwd(), p))) {
-      return path.join(process.cwd(), p);
-    }
-  }
-  return null;
-}
-
-async function loadConfig(configPath: string): Promise<AidfConfig> {
-  const fs = await import('fs/promises');
-  const yaml = await import('yaml');
-
-  const content = await fs.readFile(configPath, 'utf-8');
-
-  const raw = configPath.endsWith('.json')
-    ? JSON.parse(content)
-    : yaml.parse(content);
-
-  return normalizeConfig(raw);
-}
-
-function getDefaultConfig(): AidfConfig {
-  return {
-    version: 1,
-    provider: { type: 'claude-cli' },
-    execution: {
-      max_iterations: 50,
-      max_consecutive_failures: 3,
-      timeout_per_iteration: 300,
-    },
-    permissions: {
-      scope_enforcement: 'ask',
-      auto_commit: true,
-      auto_push: false,
-      auto_pr: false,
-    },
-    validation: {
-      pre_commit: [],
-      pre_push: [],
-      pre_pr: [],
-    },
-    git: {
-      commit_prefix: 'aidf:',
-      branch_prefix: 'aidf/',
-    },
-    notifications: {
-      level: 'all',
-      desktop: { enabled: false },
-      slack: { enabled: false, webhook_url: '' },
-      discord: { enabled: false, webhook_url: '' },
-      webhook: { enabled: false, url: '' },
-      email: {
-        enabled: false,
-        smtp_host: '',
-        smtp_port: 587,
-        smtp_user: '',
-        smtp_pass: '',
-        from: '',
-        to: '',
-      },
-    },
-  };
 }

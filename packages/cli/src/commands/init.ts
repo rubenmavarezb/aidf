@@ -12,7 +12,7 @@ import {
   findTemplatesDir,
   detectValidationCommands,
   getProjectName,
-  type DetectedCommands,
+  type DetectedValidation,
 } from '../utils/files.js';
 
 interface InitAnswers {
@@ -191,16 +191,6 @@ async function runInit(
   // Step 6: Create config.yml
   logger.updateSpinner('Creating configuration...');
 
-  // Map detected commands to validation phases
-  const preCommit: string[] = [];
-  const prePush: string[] = [];
-  const prePr: string[] = [];
-  if (detectedCommands.lint) preCommit.push(detectedCommands.lint);
-  if (detectedCommands.typecheck) preCommit.push(detectedCommands.typecheck);
-  if (detectedCommands.format) preCommit.push(detectedCommands.format);
-  if (detectedCommands.test) prePush.push(detectedCommands.test);
-  if (detectedCommands.build) prePr.push(detectedCommands.build);
-
   const config: InitConfig = {
     framework: 'aidf',
     version: 1,
@@ -218,11 +208,7 @@ async function runInit(
       auto_push: false,
       auto_pr: false,
     },
-    validation: {
-      pre_commit: preCommit,
-      pre_push: prePush,
-      pre_pr: prePr,
-    },
+    validation: detectedCommands,
     security: {
       skip_permissions: true,
       warn_on_skip: true,
@@ -373,7 +359,7 @@ function updateGitignore(projectPath: string): void {
 
 function printNextSteps(
   answers: InitAnswers,
-  commands: DetectedCommands,
+  commands: DetectedValidation,
   logger: Logger
 ): void {
   console.log('');
@@ -389,13 +375,15 @@ function printNextSteps(
   ].join('\n'));
 
   // Show detected commands
-  const detectedList = Object.entries(commands)
-    .filter(([_, cmd]) => cmd)
-    .map(([name, cmd]) => `  ${chalk.green('✓')} ${name}: ${chalk.gray(cmd)}`);
+  const allCommands = [
+    ...commands.pre_commit.map(cmd => `  ${chalk.green('✓')} pre_commit: ${chalk.gray(cmd)}`),
+    ...commands.pre_push.map(cmd => `  ${chalk.green('✓')} pre_push: ${chalk.gray(cmd)}`),
+    ...commands.pre_pr.map(cmd => `  ${chalk.green('✓')} pre_pr: ${chalk.gray(cmd)}`),
+  ];
 
-  if (detectedList.length > 0) {
+  if (allCommands.length > 0) {
     console.log(chalk.bold('Detected validation commands:'));
-    console.log(detectedList.join('\n'));
+    console.log(allCommands.join('\n'));
     console.log('');
   }
 

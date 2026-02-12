@@ -4,7 +4,6 @@ import chokidar from 'chokidar';
 import { readdir, readFile, stat } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join, basename } from 'path';
-import { parse as parseYaml } from 'yaml';
 import type {
   AidfConfig,
   WatcherOptions,
@@ -16,7 +15,7 @@ import type {
 } from '../types/index.js';
 import { executeTask } from './executor.js';
 import { Logger } from '../utils/logger.js';
-import { normalizeConfig } from '../utils/config.js';
+import { findAndLoadConfig } from '../utils/config.js';
 import { LiveStatus } from '../utils/live-status.js';
 import { NotificationService } from '../utils/notifications.js';
 
@@ -391,24 +390,8 @@ export class Watcher {
   }
 
   async loadConfig(): Promise<void> {
-    const aiDir = join(this.projectRoot, '.ai');
-
-    for (const fileName of CONFIG_FILES) {
-      const configPath = join(aiDir, fileName);
-      if (existsSync(configPath)) {
-        const content = await readFile(configPath, 'utf-8');
-        const raw = configPath.endsWith('.json')
-          ? JSON.parse(content)
-          : parseYaml(content);
-        this.config = normalizeConfig(raw);
-        this.logger.debug(`Loaded config from ${fileName}`);
-        return;
-      }
-    }
-
-    // No config found -- use defaults
-    this.config = null;
-    this.logger.debug('No config file found. Using defaults.');
+    this.config = await findAndLoadConfig(this.projectRoot);
+    this.logger.debug('Config loaded.');
   }
 
   private async scanExistingTasks(): Promise<void> {

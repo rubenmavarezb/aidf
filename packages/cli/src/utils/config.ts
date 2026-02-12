@@ -1,5 +1,7 @@
 // packages/cli/src/utils/config.ts
 
+import { existsSync } from 'fs';
+import { join } from 'path';
 import type { AidfConfig } from '../types/index.js';
 
 /**
@@ -134,6 +136,97 @@ export function normalizeConfig(raw: Record<string, unknown>): AidfConfig {
   }
 
   return config as unknown as AidfConfig;
+}
+
+/**
+ * Searches for a config file in the .ai/ directory of the given base path.
+ * Returns the path if found, or null if no config file exists.
+ */
+export function findConfigFile(basePath?: string): string | null {
+  const base = basePath ?? process.cwd();
+
+  const possiblePaths = [
+    join(base, '.ai', 'config.yml'),
+    join(base, '.ai', 'config.yaml'),
+    join(base, '.ai', 'config.json'),
+  ];
+
+  for (const p of possiblePaths) {
+    if (existsSync(p)) {
+      return p;
+    }
+  }
+  return null;
+}
+
+/**
+ * Loads and normalizes a config file from the given path.
+ */
+export async function loadConfigFromFile(configPath: string): Promise<AidfConfig> {
+  const fs = await import('fs/promises');
+  const yaml = await import('yaml');
+
+  const content = await fs.readFile(configPath, 'utf-8');
+
+  const raw = configPath.endsWith('.json')
+    ? JSON.parse(content)
+    : yaml.parse(content);
+
+  return normalizeConfig(raw);
+}
+
+/**
+ * Returns a default AidfConfig with sensible defaults.
+ */
+export function getDefaultConfig(): AidfConfig {
+  return {
+    version: 1,
+    provider: { type: 'claude-cli' },
+    execution: {
+      max_iterations: 50,
+      max_consecutive_failures: 3,
+      timeout_per_iteration: 300,
+    },
+    permissions: {
+      scope_enforcement: 'ask',
+      auto_commit: true,
+      auto_push: false,
+      auto_pr: false,
+    },
+    validation: {
+      pre_commit: [],
+      pre_push: [],
+      pre_pr: [],
+    },
+    git: {
+      commit_prefix: 'aidf:',
+      branch_prefix: 'aidf/',
+    },
+    notifications: {
+      level: 'all',
+      desktop: { enabled: false },
+      slack: { enabled: false, webhook_url: '' },
+      discord: { enabled: false, webhook_url: '' },
+      webhook: { enabled: false, url: '' },
+      email: {
+        enabled: false,
+        smtp_host: '',
+        smtp_port: 587,
+        smtp_user: '',
+        smtp_pass: '',
+        from: '',
+        to: '',
+      },
+    },
+  };
+}
+
+/**
+ * Finds and loads a config file from the .ai/ directory, or returns defaults.
+ */
+export async function findAndLoadConfig(basePath?: string): Promise<AidfConfig> {
+  const configPath = findConfigFile(basePath);
+  return configPath ? loadConfigFromFile(configPath) : getDefaultConfig();
 }
 
 /** Keys in config that are likely to hold secrets */

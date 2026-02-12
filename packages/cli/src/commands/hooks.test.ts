@@ -36,10 +36,13 @@ vi.mock('fs', async () => {
 import { ContextLoader } from '../core/context-loader.js';
 import { existsSync, readFileSync } from 'fs';
 
+const mockExistsSync = vi.mocked(existsSync);
+const mockReadFileSync = vi.mocked(readFileSync);
+
 describe('hooks command', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    (ContextLoader.findAiDir as any).mockReturnValue('/test/project');
+    vi.mocked(ContextLoader.findAiDir).mockReturnValue('/test/project');
   });
 
   describe('createHooksCommand', () => {
@@ -92,34 +95,34 @@ describe('hooks command', () => {
 
   describe('detectHusky', () => {
     it('should return true when .husky directory exists', () => {
-      (existsSync as any).mockImplementation((path: string) =>
-        path.includes('.husky')
+      mockExistsSync.mockImplementation((path) =>
+        String(path).includes('.husky')
       );
       expect(detectHusky('/test/project')).toBe(true);
     });
 
     it('should return true when husky is in devDependencies', () => {
-      (existsSync as any).mockImplementation((path: string) =>
-        path.includes('package.json')
+      mockExistsSync.mockImplementation((path) =>
+        String(path).includes('package.json')
       );
-      (readFileSync as any).mockReturnValue(
+      mockReadFileSync.mockReturnValue(
         JSON.stringify({ devDependencies: { husky: '^9.0.0' } })
       );
       expect(detectHusky('/test/project')).toBe(true);
     });
 
     it('should return true when prepare script includes husky', () => {
-      (existsSync as any).mockImplementation((path: string) =>
-        path.includes('package.json')
+      mockExistsSync.mockImplementation((path) =>
+        String(path).includes('package.json')
       );
-      (readFileSync as any).mockReturnValue(
+      mockReadFileSync.mockReturnValue(
         JSON.stringify({ scripts: { prepare: 'husky install' } })
       );
       expect(detectHusky('/test/project')).toBe(true);
     });
 
     it('should return false when no husky detected', () => {
-      (existsSync as any).mockReturnValue(false);
+      mockExistsSync.mockReturnValue(false);
       expect(detectHusky('/test/project')).toBe(false);
     });
   });
@@ -151,7 +154,7 @@ describe('hooks command', () => {
 
   describe('error handling', () => {
     it('should exit with error when no AIDF project found', async () => {
-      (ContextLoader.findAiDir as any).mockReturnValue(null);
+      vi.mocked(ContextLoader.findAiDir).mockReturnValue(null);
 
       const cmd = createHooksCommand();
       const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {

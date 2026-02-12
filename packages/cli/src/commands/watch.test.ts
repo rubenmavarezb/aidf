@@ -29,7 +29,7 @@ import { ContextLoader } from '../core/context-loader.js';
 describe('watch command', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    (ContextLoader.findAiDir as any).mockReturnValue('/test/project');
+    vi.mocked(ContextLoader.findAiDir).mockReturnValue('/test/project');
   });
 
   describe('createWatchCommand', () => {
@@ -102,7 +102,7 @@ describe('watch command', () => {
 
   describe('error handling', () => {
     it('should exit with error when no AIDF project found', async () => {
-      (ContextLoader.findAiDir as any).mockReturnValue(null);
+      vi.mocked(ContextLoader.findAiDir).mockReturnValue(null);
 
       const cmd = createWatchCommand();
 

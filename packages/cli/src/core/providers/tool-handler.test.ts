@@ -201,9 +201,9 @@ describe('ToolHandler', () => {
   describe('reset', () => {
     it('should clear tracked files', async () => {
       const { writeFile } = await import('fs/promises');
-      (writeFile as any).mockResolvedValue(undefined);
+      vi.mocked(writeFile).mockResolvedValue(undefined);
       const { existsSync } = await import('fs');
-      (existsSync as any).mockReturnValue(true);
+      vi.mocked(existsSync).mockReturnValue(true);
 
       await handler.handle('write_file', { path: 'test.ts', content: 'code' });
       expect(handler.getChangedFiles()).toHaveLength(1);
@@ -220,9 +220,9 @@ describe('ToolHandler', () => {
 
     it('should track files written', async () => {
       const { writeFile } = await import('fs/promises');
-      (writeFile as any).mockResolvedValue(undefined);
+      vi.mocked(writeFile).mockResolvedValue(undefined);
       const { existsSync } = await import('fs');
-      (existsSync as any).mockReturnValue(true);
+      vi.mocked(existsSync).mockReturnValue(true);
 
       await handler.handle('write_file', { path: 'file1.ts', content: 'a' });
       await handler.handle('write_file', { path: 'file2.ts', content: 'b' });
@@ -237,7 +237,7 @@ describe('ToolHandler', () => {
     describe('read_file', () => {
       it('should read file content', async () => {
         const { readFile } = await import('fs/promises');
-        (readFile as any).mockResolvedValue('file content here');
+        vi.mocked(readFile).mockResolvedValue('file content here');
 
         const result = await handler.handle('read_file', { path: 'src/test.ts' });
 
@@ -247,7 +247,7 @@ describe('ToolHandler', () => {
 
       it('should return error on read failure', async () => {
         const { readFile } = await import('fs/promises');
-        (readFile as any).mockRejectedValue(new Error('File not found'));
+        vi.mocked(readFile).mockRejectedValue(new Error('File not found'));
 
         const result = await handler.handle('read_file', { path: 'missing.ts' });
 
@@ -260,8 +260,8 @@ describe('ToolHandler', () => {
       it('should write file content', async () => {
         const { writeFile } = await import('fs/promises');
         const { existsSync } = await import('fs');
-        (writeFile as any).mockResolvedValue(undefined);
-        (existsSync as any).mockReturnValue(true);
+        vi.mocked(writeFile).mockResolvedValue(undefined);
+        vi.mocked(existsSync).mockReturnValue(true);
 
         const result = await handler.handle('write_file', {
           path: 'src/new.ts',
@@ -275,9 +275,9 @@ describe('ToolHandler', () => {
       it('should create directory if it does not exist', async () => {
         const { writeFile, mkdir } = await import('fs/promises');
         const { existsSync } = await import('fs');
-        (writeFile as any).mockResolvedValue(undefined);
-        (mkdir as any).mockResolvedValue(undefined);
-        (existsSync as any).mockReturnValue(false);
+        vi.mocked(writeFile).mockResolvedValue(undefined);
+        vi.mocked(mkdir).mockResolvedValue(undefined);
+        vi.mocked(existsSync).mockReturnValue(false);
 
         await handler.handle('write_file', {
           path: 'new/dir/file.ts',
@@ -293,8 +293,8 @@ describe('ToolHandler', () => {
       it('should track written files', async () => {
         const { writeFile } = await import('fs/promises');
         const { existsSync } = await import('fs');
-        (writeFile as any).mockResolvedValue(undefined);
-        (existsSync as any).mockReturnValue(true);
+        vi.mocked(writeFile).mockResolvedValue(undefined);
+        vi.mocked(existsSync).mockReturnValue(true);
 
         await handler.handle('write_file', { path: 'tracked.ts', content: 'x' });
 
@@ -305,7 +305,7 @@ describe('ToolHandler', () => {
     describe('list_files', () => {
       it('should list files with default pattern', async () => {
         const { glob } = await import('glob');
-        (glob as any).mockResolvedValue(['a.ts', 'b.ts', 'c.ts']);
+        vi.mocked(glob).mockResolvedValue(['a.ts', 'b.ts', 'c.ts']);
 
         const result = await handler.handle('list_files', { path: 'src' });
 
@@ -314,7 +314,7 @@ describe('ToolHandler', () => {
 
       it('should use provided pattern', async () => {
         const { glob } = await import('glob');
-        (glob as any).mockResolvedValue(['test.spec.ts']);
+        vi.mocked(glob).mockResolvedValue(['test.spec.ts']);
 
         const result = await handler.handle('list_files', {
           path: 'src',
@@ -331,18 +331,18 @@ describe('ToolHandler', () => {
         const { spawn } = await import('child_process');
         const mockProc = {
           stdout: {
-            on: vi.fn((event, cb) => {
+            on: vi.fn((event: string, cb: (data: Buffer) => void) => {
               if (event === 'data') cb(Buffer.from('command output'));
             }),
           },
           stderr: {
             on: vi.fn(),
           },
-          on: vi.fn((event, cb) => {
+          on: vi.fn((event: string, cb: (code: number) => void) => {
             if (event === 'close') setTimeout(() => cb(0), 10);
           }),
         };
-        (spawn as any).mockReturnValue(mockProc);
+        vi.mocked(spawn).mockReturnValue(mockProc as unknown as ReturnType<typeof spawn>);
 
         const result = await handler.handle('run_command', { command: 'echo hello' });
 
@@ -382,16 +382,16 @@ describe('ToolHandler', () => {
         const { spawn } = await import('child_process');
         const mockProc = {
           stdout: {
-            on: vi.fn((event, cb) => {
+            on: vi.fn((event: string, cb: (data: Buffer) => void) => {
               if (event === 'data') cb(Buffer.from('test output'));
             }),
           },
           stderr: { on: vi.fn() },
-          on: vi.fn((event, cb) => {
+          on: vi.fn((event: string, cb: (code: number) => void) => {
             if (event === 'close') setTimeout(() => cb(0), 10);
           }),
         };
-        (spawn as any).mockReturnValue(mockProc);
+        vi.mocked(spawn).mockReturnValue(mockProc as unknown as ReturnType<typeof spawn>);
 
         const policyHandler = new ToolHandler('/test/cwd', {
           allowed: ['pnpm test'],
@@ -443,8 +443,8 @@ describe('ToolHandler', () => {
       it('should allow write to path within allowed scope', async () => {
         const { writeFile } = await import('fs/promises');
         const { existsSync } = await import('fs');
-        (writeFile as any).mockResolvedValue(undefined);
-        (existsSync as any).mockReturnValue(true);
+        vi.mocked(writeFile).mockResolvedValue(undefined);
+        vi.mocked(existsSync).mockReturnValue(true);
 
         const scopedHandler = new ToolHandler('/test/cwd', undefined, scope, 'strict');
         const result = await scopedHandler.handle('write_file', {
@@ -458,7 +458,7 @@ describe('ToolHandler', () => {
 
       it('should block write to path in forbidden scope', async () => {
         const { writeFile } = await import('fs/promises');
-        (writeFile as any).mockResolvedValue(undefined);
+        vi.mocked(writeFile).mockResolvedValue(undefined);
 
         const scopedHandler = new ToolHandler('/test/cwd', undefined, scope, 'strict');
         const result = await scopedHandler.handle('write_file', {
@@ -473,7 +473,7 @@ describe('ToolHandler', () => {
 
       it('should block write to path outside allowed scope in strict mode', async () => {
         const { writeFile } = await import('fs/promises');
-        (writeFile as any).mockResolvedValue(undefined);
+        vi.mocked(writeFile).mockResolvedValue(undefined);
 
         const scopedHandler = new ToolHandler('/test/cwd', undefined, scope, 'strict');
         const result = await scopedHandler.handle('write_file', {
@@ -500,7 +500,7 @@ describe('ToolHandler', () => {
     describe('read_file with scope', () => {
       it('should allow read from path outside allowed scope', async () => {
         const { readFile } = await import('fs/promises');
-        (readFile as any).mockResolvedValue('content');
+        vi.mocked(readFile).mockResolvedValue('content');
 
         const scopedHandler = new ToolHandler('/test/cwd', undefined, scope, 'strict');
         const result = await scopedHandler.handle('read_file', {
@@ -512,7 +512,7 @@ describe('ToolHandler', () => {
 
       it('should allow read from forbidden path', async () => {
         const { readFile } = await import('fs/promises');
-        (readFile as any).mockResolvedValue('secret content');
+        vi.mocked(readFile).mockResolvedValue('secret content');
 
         const scopedHandler = new ToolHandler('/test/cwd', undefined, scope, 'strict');
         const result = await scopedHandler.handle('read_file', {
@@ -526,7 +526,7 @@ describe('ToolHandler', () => {
     describe('list_files with scope', () => {
       it('should allow list_files regardless of scope', async () => {
         const { glob } = await import('glob');
-        (glob as any).mockResolvedValue(['file1.ts', 'file2.ts']);
+        vi.mocked(glob).mockResolvedValue(['file1.ts', 'file2.ts']);
 
         const scopedHandler = new ToolHandler('/test/cwd', undefined, scope, 'strict');
         const result = await scopedHandler.handle('list_files', {
@@ -541,8 +541,8 @@ describe('ToolHandler', () => {
       it('should allow all writes when no scope is set', async () => {
         const { writeFile } = await import('fs/promises');
         const { existsSync } = await import('fs');
-        (writeFile as any).mockResolvedValue(undefined);
-        (existsSync as any).mockReturnValue(true);
+        vi.mocked(writeFile).mockResolvedValue(undefined);
+        vi.mocked(existsSync).mockReturnValue(true);
 
         const noScopeHandler = new ToolHandler('/test/cwd');
         const result = await noScopeHandler.handle('write_file', {
@@ -595,8 +595,8 @@ describe('ToolHandler', () => {
       it('should allow in permissive mode for out-of-scope files', async () => {
         const { writeFile } = await import('fs/promises');
         const { existsSync } = await import('fs');
-        (writeFile as any).mockResolvedValue(undefined);
-        (existsSync as any).mockReturnValue(true);
+        vi.mocked(writeFile).mockResolvedValue(undefined);
+        vi.mocked(existsSync).mockReturnValue(true);
 
         const scopedHandler = new ToolHandler('/test/cwd', undefined, scope, 'permissive');
         const result = await scopedHandler.handle('write_file', {
