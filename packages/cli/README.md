@@ -17,7 +17,7 @@ npm install -g aidf
 ## Quick Start
 
 ```bash
-aidf init            # Create .ai/ folder with context and templates
+aidf init --smart    # Create .ai/ with AI-customized config
 aidf task create     # Create a task interactively
 aidf run             # Execute the first pending task
 aidf status          # View project dashboard
@@ -33,7 +33,7 @@ aidf status          # View project dashboard
 
 | Command | Description | Key Flags |
 |---------|-------------|-----------|
-| `aidf init` | Initialize `.ai/` folder | `--yes`, `--force` |
+| `aidf init` | Initialize `.ai/` folder | `--yes`, `--force`, `--smart` |
 | `aidf run [tasks...]` | Execute tasks autonomously | `--parallel`, `--resume`, `--auto-pr`, `--quiet`, `--dry-run` |
 | `aidf task create` | Create a task interactively | `--template <name>` |
 | `aidf task list` | List all tasks with status | `--all` |
@@ -46,6 +46,8 @@ aidf status          # View project dashboard
 | `aidf skills init <name>` | Create a new skill | `--global` |
 | `aidf skills validate` | Validate skills | |
 | `aidf skills add <path>` | Add an external skill | |
+| `aidf mcp serve` | Start MCP server for AI clients | |
+| `aidf mcp install` | Generate MCP config | `--target <client>` |
 
 ## Configuration
 
@@ -94,6 +96,11 @@ git:
 - Task templates: bug-fix, new-feature, refactor, test-coverage, documentation, dependency-update
 - Structured logging (text/JSON) with file output and rotation
 - Dry run mode
+- Smart init — AI analyzes project and generates customized AGENTS.md and config.yml
+- MCP server — Expose AIDF context as MCP tools and resources
+- Zod config validation — catch config errors at load time
+- Real timeout enforcement with Promise.race()
+- Enhanced security: path traversal protection, eval/backtick blocking
 
 ## Documentation
 

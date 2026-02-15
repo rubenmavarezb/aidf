@@ -198,6 +198,9 @@ AIDF ships with 6 built-in skills that mirror the built-in roles:
 | `aidf-reviewer` | Code review, quality, constructive feedback |
 | `aidf-documenter` | Technical writing, API docs, guides |
 | `aidf-task-templates` | Structured task templates for all 6 task types |
+| `aidf` | Teaches any AI agent how to work with AIDF projects (structure, commands, conventions) |
+
+The `aidf` skill is a portable meta-skill: it gives any compatible AI agent the knowledge to navigate and use AIDF projects without prior context. This is useful when onboarding new AI tools or sharing AIDF projects with collaborators who use different agents.
 
 These are included in the `templates/.ai/skills/` directory and are copied to your project when you run `aidf init`.
 

@@ -79,7 +79,8 @@ aidf/
 │       └── src/
 │           ├── index.ts           # CLI entry point (Commander)
 │           ├── types/index.ts     # All TypeScript interfaces
-│           ├── commands/          # init, run, task, status, watch, hooks, skills
+│           ├── commands/          # init, run, task, status, watch, hooks, skills, mcp
+│           │   └── mcp.ts             # MCP serve and install commands
 │           ├── core/
 │           │   ├── executor.ts          # Main execution loop
 │           │   ├── parallel-executor.ts # Multi-task parallel execution
@@ -88,6 +89,7 @@ aidf/
 │           │   ├── safety.ts            # ScopeGuard (allowed/forbidden paths)
 │           │   ├── validator.ts         # Runs validation commands
 │           │   ├── watcher.ts           # File change monitoring
+│           │   ├── project-analyzer.ts # Detects framework, test runner, linter, pkg manager
 │           │   └── providers/
 │           │       ├── index.ts         # Provider factory
 │           │       ├── types.ts         # Provider interface, ExecutionResult
@@ -96,6 +98,8 @@ aidf/
 │           │       ├── anthropic-api.ts # Direct Anthropic API
 │           │       ├── openai-api.ts    # Direct OpenAI API
 │           │       └── tool-handler.ts  # File operation tools for API providers
+│           ├── mcp/
+│           │   └── server.ts          # MCP server (tools + resources)
 │           └── utils/
 │               ├── logger.ts            # Structured logging
 │               ├── live-status.ts       # Real-time spinner + timer
@@ -131,6 +135,10 @@ All providers implement `{ name, execute(prompt, options), isAvailable() }` from
 
 Executor detects `<TASK_COMPLETE>`, `<DONE>`, or `<TASK_BLOCKED>` signals in AI output. Writes status back to the task .md file.
 
+**Timeout Enforcement**
+
+Executor uses `Promise.race()` for real timeout enforcement per iteration, ensuring no single iteration can hang indefinitely regardless of provider behavior.
+
 ### Key Files
 
 | File | Purpose |
@@ -143,6 +151,10 @@ Executor detects `<TASK_COMPLETE>`, `<DONE>`, or `<TASK_BLOCKED>` signals in AI 
 | `packages/cli/src/core/providers/tool-handler.ts` | File operation tools for API providers |
 | `packages/cli/src/types/index.ts` | All TypeScript interfaces |
 | `packages/cli/src/index.ts` | CLI entry point — all commands registered here |
+| `packages/cli/src/mcp/server.ts` | MCP server — tools (list_tasks, get_context, validate, create_task, analyze_project) and resources |
+| `packages/cli/src/core/project-analyzer.ts` | Detects framework, test runner, linter, package manager for smart init |
+| `packages/cli/src/commands/mcp.ts` | `aidf mcp serve` and `aidf mcp install` commands |
+| `templates/.ai/prompts/smart-init.md` | Master prompt for AI-powered project analysis |
 
 ---
 
@@ -158,6 +170,8 @@ Executor detects `<TASK_COMPLETE>`, `<DONE>`, or `<TASK_BLOCKED>` signals in AI 
 | Package Manager | pnpm | 9.x | Workspaces monorepo |
 | Linting | ESLint | 9.x | Flat config |
 | CI/CD | GitHub Actions | - | Test on PR, release on tag |
+| Validation | Zod | 3.x | Config schema validation |
+| MCP | @modelcontextprotocol/sdk | 1.x | MCP server implementation |
 
 ---
 
@@ -292,7 +306,7 @@ IMPORTANT: These standards apply to ALL code in this project.
 
 - All new functionality must have tests
 - Test happy path, edge cases, and error conditions
-- Current: 19 test files, 298+ tests
+- Current: 19 test files, 613+ tests
 
 ### Type Safety
 
@@ -421,7 +435,7 @@ Tasks live in `.ai/tasks/` organized by status:
 | `.ai/tasks/completed/` | Finished tasks with status logs |
 | `.ai/tasks/blocked/` | Tasks blocked by dependencies or issues |
 
-Task numbering is sequential (currently at 049). Next task: 050.
+Task numbering is sequential (currently at 078). Next task: 079.
 
 ---
 

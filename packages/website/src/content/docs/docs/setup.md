@@ -42,6 +42,27 @@ your-project/
 
 ---
 
+## Smart Init
+
+Instead of manual setup, you can use `aidf init --smart` to let AI analyze your project and auto-generate a customized `.ai/` folder:
+
+```bash
+aidf init --smart
+```
+
+Smart init uses the configured AI provider to scan your project and automatically detects:
+
+- **Framework** (React, Next.js, Express, etc.)
+- **Test runner** (Vitest, Jest, pytest, etc.)
+- **Linter** (ESLint, Prettier, etc.)
+- **Package manager** (npm, pnpm, yarn, bun)
+- **TypeScript** configuration and strictness
+- **Monorepo** structure (workspaces, packages)
+
+It then generates a tailored `AGENTS.md` and `config.yml` that reflect your project's actual setup, conventions, and tooling. You can review and edit the generated files afterward.
+
+---
+
 ## Step 2: Create AGENTS.md
 
 This is the most important file. It gives AI complete context about your project.

@@ -54,6 +54,7 @@ export default defineConfig({
             { label: 'Agent Skills', slug: 'docs/skills', translations: { es: 'Agent Skills', pt: 'Agent Skills', fr: 'Agent Skills' } },
             { label: 'Integrations', slug: 'docs/integrations', translations: { es: 'Integraciones', pt: 'Integrações', fr: 'Intégrations' } },
             { label: 'Git Hooks', slug: 'docs/hooks' },
+            { label: 'Security', slug: 'docs/security', translations: { es: 'Seguridad', pt: 'Segurança', fr: 'Sécurité' } },
             { label: 'Notifications', slug: 'docs/notifications', translations: { es: 'Notificaciones', pt: 'Notificações' } },
             { label: 'FAQ', slug: 'docs/faq', translations: { es: 'Preguntas Frecuentes', pt: 'Perguntas Frequentes', fr: 'Foire aux Questions' } },
           ],

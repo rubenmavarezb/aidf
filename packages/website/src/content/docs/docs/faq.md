@@ -190,6 +190,22 @@ Check the task `.md` file — the executor writes a `## Status` section with exe
 
 Run with `scope_enforcement: ask` instead of `strict`. This lets you see exactly which files the AI tried to modify outside the task's scope, and approve or reject each one.
 
+### What is smart init?
+
+The `--smart` flag on `aidf init` uses AI to analyze your project before generating the `.ai/` folder. Instead of generic templates, it produces a customized `AGENTS.md` and `config.yml` based on what it detects in your codebase: framework, test runner, linter, package manager, TypeScript setup, and monorepo structure. Run it with:
+
+```bash
+aidf init --smart
+```
+
+### What is the MCP server?
+
+AIDF includes a built-in MCP (Model Context Protocol) server that lets external AI clients (like Claude Desktop or Cursor) access your project context, tasks, and operations through a standardized protocol. Start it with `aidf mcp serve`, or run `aidf mcp install` to auto-configure your client. See the [MCP Integration](/aidf/docs/integrations/#mcp-integration) section for the full list of tools and resources.
+
+### How is config validated?
+
+AIDF validates `.ai/config.yml` at load time using [Zod](https://zod.dev) schemas. Every field is checked against its expected type and allowed values. Unknown fields and invalid values produce clear error messages before execution begins, so misconfigurations are caught early rather than causing silent failures during a run.
+
 ### The AI keeps making changes I don't want
 
 1. Make your `AGENTS.md` more specific about conventions and boundaries

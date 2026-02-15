@@ -43,6 +43,7 @@ npm install -g aidf
 
 cd your-project
 aidf init            # Create .ai/ folder with context and templates
+aidf init --smart    # Create .ai/ folder + AI-customized AGENTS.md
 aidf task create     # Create a task interactively
 aidf run             # Execute the first pending task
 ```
@@ -51,7 +52,8 @@ aidf run             # Execute the first pending task
 
 | Command | Description | Key Flags |
 |---------|-------------|-----------|
-| `aidf init` | Initialize `.ai/` folder with templates | `--yes`, `--force` |
+| `aidf init` | Initialize `.ai/` folder with templates | `--yes`, `--force`, `--smart` |
+| `aidf init --smart` | Initialize with AI-powered project analysis | `--yes`, `--force` |
 | `aidf run [tasks...]` | Execute tasks autonomously | `--parallel`, `--resume`, `--auto-pr`, `--quiet`, `--dry-run` |
 | `aidf task create` | Create a task interactively | `--template <name>` |
 | `aidf task list` | List all tasks with status | `--all` |
@@ -64,6 +66,8 @@ aidf run             # Execute the first pending task
 | `aidf skills init <name>` | Create a new skill | `--global` |
 | `aidf skills validate` | Validate skills | |
 | `aidf skills add <path>` | Add an external skill | |
+| `aidf mcp serve` | Start MCP server on stdio | |
+| `aidf mcp install` | Generate MCP config for Claude Desktop/Cursor | |
 
 All commands support `--log-format <text|json>`, `--log-file <path>`, and `--log-rotate`.
 
@@ -179,6 +183,18 @@ notifications:
 
 API providers (anthropic-api, openai-api) include built-in file operation tools: read/write files, list directory contents, run commands, and signal task completion or blocking.
 
+## MCP Integration
+
+AIDF includes a built-in MCP (Model Context Protocol) server that exposes your project's AIDF context as tools and resources for any MCP-compatible client.
+
+```bash
+aidf mcp serve              # Start MCP server on stdio
+aidf mcp install            # Show config for Claude Desktop / Cursor
+```
+
+**Tools:** `aidf_list_tasks`, `aidf_get_context`, `aidf_validate`, `aidf_create_task`, `aidf_analyze_project`
+**Resources:** `aidf://agents`, `aidf://config`, `aidf://tasks/{name}`, `aidf://roles/{name}`
+
 ## Project Structure
 
 ```
@@ -186,6 +202,8 @@ API providers (anthropic-api, openai-api) include built-in file operation tools:
 ├── AGENTS.md              # Project context (architecture, conventions, boundaries)
 ├── ROLES.md               # Role selection guide
 ├── config.yml             # CLI configuration
+│
+├── prompts/               # Smart init prompt templates
 │
 ├── roles/                 # AI personas
 │   ├── architect.md
@@ -235,6 +253,11 @@ API providers (anthropic-api, openai-api) include built-in file operation tools:
 - **Structured logging** — Text or JSON format, file output with optional rotation
 - **Dry run mode** — Simulate execution without making changes
 - **Multiple providers** — Claude CLI, Anthropic API, OpenAI API with token tracking
+- **Smart init** (`aidf init --smart`) — AI analyzes your project and generates customized AGENTS.md and config.yml
+- **MCP server** — Expose AIDF as tools and resources for any MCP-compatible client (Claude Desktop, Cursor)
+- **Zod config validation** — config.yml validated at load time with descriptive errors
+- **Real timeout enforcement** — Promise.race() prevents provider hangs
+- **Enhanced security** — Path traversal protection, eval/backtick blocking, block_suspicious default true
 
 ## Troubleshooting
 
