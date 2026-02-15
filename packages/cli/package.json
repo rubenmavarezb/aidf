@@ -1,6 +1,6 @@
 {
   "name": "aidf",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "AI-Integrated Development Framework — task runner with scope enforcement, MCP server, and structured context for AI agents",
   "type": "module",
   "bin": {
