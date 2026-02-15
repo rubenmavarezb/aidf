@@ -90,6 +90,42 @@ describe('validateCommand', () => {
       expect(validateCommand('rm -rf ./dist')).toBeNull();
       expect(validateCommand('rm -rf node_modules')).toBeNull();
     });
+
+    it('should block pipe to sudo', () => {
+      const result = validateCommand('echo password | sudo tee /etc/file');
+      expect(result).not.toBeNull();
+      expect(result).toContain('blocked');
+    });
+
+    it('should block chain to sudo with &&', () => {
+      const result = validateCommand('cd /tmp && sudo rm -rf /');
+      expect(result).not.toBeNull();
+      expect(result).toContain('blocked');
+    });
+
+    it('should block chain to sudo with ;', () => {
+      const result = validateCommand('echo hi; sudo reboot');
+      expect(result).not.toBeNull();
+      expect(result).toContain('blocked');
+    });
+
+    it('should block eval', () => {
+      const result = validateCommand('eval "rm -rf /"');
+      expect(result).not.toBeNull();
+      expect(result).toContain('blocked');
+    });
+
+    it('should block backtick execution', () => {
+      const result = validateCommand('echo `whoami`');
+      expect(result).not.toBeNull();
+      expect(result).toContain('blocked');
+    });
+
+    it('should block $() subshell execution', () => {
+      const result = validateCommand('echo $(whoami)');
+      expect(result).not.toBeNull();
+      expect(result).toContain('blocked');
+    });
   });
 
   describe('user-configured blocked list', () => {
@@ -578,6 +614,47 @@ describe('ToolHandler', () => {
         });
 
         expect(result).toContain('outside/scope.ts');
+      });
+    });
+
+    describe('path traversal protection', () => {
+      it('should block read_file with ../ traversal outside cwd', async () => {
+        const result = await handler.handle('read_file', {
+          path: '../../etc/passwd',
+        });
+        expect(result).toContain('Path traversal blocked');
+      });
+
+      it('should block write_file with ../ traversal outside cwd', async () => {
+        const result = await handler.handle('write_file', {
+          path: '../../../tmp/evil.sh',
+          content: 'malicious',
+        });
+        expect(result).toContain('Path traversal blocked');
+      });
+
+      it('should block list_files with ../ traversal outside cwd', async () => {
+        const result = await handler.handle('list_files', {
+          path: '../../../',
+        });
+        expect(result).toContain('Path traversal blocked');
+      });
+
+      it('should block absolute paths outside cwd', async () => {
+        const result = await handler.handle('read_file', {
+          path: '/etc/passwd',
+        });
+        expect(result).toContain('Path traversal blocked');
+      });
+
+      it('should allow relative paths within cwd', async () => {
+        const { readFile } = await import('fs/promises');
+        vi.mocked(readFile).mockResolvedValue('safe content');
+
+        const result = await handler.handle('read_file', {
+          path: 'src/index.ts',
+        });
+        expect(result).toBe('safe content');
       });
     });
 

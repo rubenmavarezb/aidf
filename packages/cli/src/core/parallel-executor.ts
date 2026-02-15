@@ -415,7 +415,7 @@ export class ParallelExecutor {
   private printSummary(result: ParallelExecutionResult, totalTimeMs: number): void {
     const elapsed = this.formatDuration(totalTimeMs);
 
-    console.log('\n');
+    this.logger.info('');
     this.logger.box('Parallel Execution Summary', [
       `Total Tasks: ${result.totalTasks}`,
       `  Completed: ${result.completed}`,
@@ -430,7 +430,7 @@ export class ParallelExecutor {
     ].join('\n'));
 
     // Per-task breakdown
-    console.log('');
+    this.logger.info('');
     this.logger.info('Per-task results:');
     for (const task of result.tasks) {
       const statusIcon = task.result.success
@@ -450,7 +450,7 @@ export class ParallelExecutor {
     }
 
     if (result.fileConflicts.length > 0) {
-      console.log('');
+      this.logger.info('');
       this.logger.warn('File conflicts detected during execution:');
       for (const conflict of result.fileConflicts) {
         this.logger.warn(`  - ${conflict}`);
@@ -458,10 +458,10 @@ export class ParallelExecutor {
     }
 
     if (result.totalFilesModified.length > 0) {
-      console.log('');
+      this.logger.info('');
       this.logger.info('All modified files:');
       for (const file of result.totalFilesModified) {
-        console.log(chalk.gray(`  - ${file}`));
+        this.logger.info(chalk.gray(`  - ${file}`));
       }
     }
   }

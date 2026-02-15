@@ -1,6 +1,6 @@
 import { readFile, writeFile, mkdir } from 'fs/promises';
-import { existsSync } from 'fs';
-import { dirname, join } from 'path';
+import { existsSync, realpathSync } from 'fs';
+import { dirname, join, resolve, isAbsolute } from 'path';
 import { glob } from 'glob';
 import { spawn } from 'child_process';
 import type { CommandPolicy, TaskScope, ScopeMode } from '../../types/index.js';
@@ -12,10 +12,16 @@ import { checkFileChange } from '../safety.js';
  */
 const DEFAULT_BLOCKED_PATTERNS: RegExp[] = [
   /\brm\s+(-[-\w]*\s+)*-[-\w]*r[-\w]*\s+\/(?:\s|$)/, // rm -rf / and variants
-  /\bsudo\b/,                                   // sudo
+  /\bsudo\b/,                                   // sudo (standalone)
+  /\|\s*sudo\b/,                                // pipe to sudo
+  /&&\s*sudo\b/,                                // chain to sudo
+  /;\s*sudo\b/,                                 // semicolon to sudo
   /\b(curl|wget)\s.*\|\s*(sh|bash|zsh)\b/,      // curl|wget piped to shell
   /\bchmod\s+777\b/,                             // chmod 777
   />\s*\/dev\/sd[a-z]/,                          // > /dev/sda and similar
+  /\beval\b/,                                    // eval
+  /`[^`]+`/,                                     // backtick execution
+  /\$\(/,                                        // $() subshell
 ];
 
 /**
@@ -84,6 +90,39 @@ export class ToolHandler {
   }
 
   /**
+   * Resolves a file path and ensures it does not escape the project root.
+   * Returns the resolved absolute path, or an error message string if blocked.
+   */
+  private resolveSafePath(filePath: string): string | { error: string } {
+    const resolved = resolve(this.cwd, filePath);
+
+    // Normalize cwd to real path for comparison
+    let normalizedCwd: string;
+    try {
+      normalizedCwd = realpathSync(this.cwd);
+    } catch {
+      normalizedCwd = resolve(this.cwd);
+    }
+
+    // Check parent directory real path if it exists (catches symlink escapes)
+    const parentDir = dirname(resolved);
+    let normalizedParent: string;
+    try {
+      normalizedParent = existsSync(parentDir) ? realpathSync(parentDir) : parentDir;
+    } catch {
+      normalizedParent = parentDir;
+    }
+
+    // The resolved path (or its parent) must be within cwd
+    const resolvedNormalized = isAbsolute(filePath) ? resolved : join(normalizedParent, resolved.slice(parentDir.length));
+    if (!resolvedNormalized.startsWith(normalizedCwd + '/') && resolvedNormalized !== normalizedCwd) {
+      return { error: `Path traversal blocked: "${filePath}" resolves outside project root` };
+    }
+
+    return resolved;
+  }
+
+  /**
    * Validate file path against task scope before write/delete operations.
    * Read operations are always allowed.
    * Returns null if allowed, or an error message string if blocked.
@@ -123,31 +162,35 @@ export class ToolHandler {
     try {
       switch (name) {
         case 'read_file': {
-          const path = join(this.cwd, input.path as string);
-          const content = await readFile(path, 'utf-8');
+          const safePath = this.resolveSafePath(input.path as string);
+          if (typeof safePath !== 'string') return safePath.error;
+          const content = await readFile(safePath, 'utf-8');
           return content;
         }
 
         case 'write_file': {
           const filePath = input.path as string;
+          const safePath = this.resolveSafePath(filePath);
+          if (typeof safePath !== 'string') return safePath.error;
           const scopeError = this.validateScope(filePath);
           if (scopeError) {
             return scopeError;
           }
-          const path = join(this.cwd, filePath);
-          const dir = dirname(path);
+          const dir = dirname(safePath);
           if (!existsSync(dir)) {
             await mkdir(dir, { recursive: true });
           }
-          await writeFile(path, input.content as string);
+          await writeFile(safePath, input.content as string);
           this.filesChanged.add(filePath);
           return `File written: ${filePath}`;
         }
 
         case 'list_files': {
           const pattern = (input.pattern as string) || '**/*';
-          const basePath = join(this.cwd, input.path as string);
-          const files = await glob(pattern, { cwd: basePath });
+          const listPath = (input.path as string) || '.';
+          const safePath = this.resolveSafePath(listPath);
+          if (typeof safePath !== 'string') return safePath.error;
+          const files = await glob(pattern, { cwd: safePath });
           return files.join('\n');
         }
 
