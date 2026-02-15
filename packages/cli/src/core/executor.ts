@@ -255,13 +255,17 @@ export class Executor {
 
         // For claude-cli, conditionally skip permissions based on security config
         // For API providers, this flag is ignored anyway
-        let result = await this.provider.execute(prompt, {
-          timeout: this.options.timeoutPerIteration * 1000,
-          dangerouslySkipPermissions: skipPermissions,
-          onOutput: this.options.onOutput,
-          sessionContinuation: useContinuation,
-          conversationState: useContinuation ? conversationState : undefined,
-        });
+        const timeoutMs = this.options.timeoutPerIteration * 1000;
+        let result = await this.executeWithTimeout(
+          this.provider.execute(prompt, {
+            timeout: timeoutMs,
+            dangerouslySkipPermissions: skipPermissions,
+            onOutput: this.options.onOutput,
+            sessionContinuation: useContinuation,
+            conversationState: useContinuation ? conversationState : undefined,
+          }),
+          timeoutMs
+        );
 
         // Fallback: if continuation failed, retry with full prompt
         if (useContinuation && !result.success && !result.iterationComplete) {
@@ -281,11 +285,14 @@ export class Executor {
               filesModified: blockedStatus.filesModified,
             } : undefined,
           });
-          result = await this.provider.execute(fullPrompt, {
-            timeout: this.options.timeoutPerIteration * 1000,
-            dangerouslySkipPermissions: skipPermissions,
-            onOutput: this.options.onOutput,
-          });
+          result = await this.executeWithTimeout(
+            this.provider.execute(fullPrompt, {
+              timeout: timeoutMs,
+              dangerouslySkipPermissions: skipPermissions,
+              onOutput: this.options.onOutput,
+            }),
+            timeoutMs
+          );
         }
 
         // Track state for next iteration
@@ -303,6 +310,28 @@ export class Executor {
           this.logger.info(
             `Iteration ${this.state.iteration} tokens: input=${result.tokenUsage.inputTokens.toLocaleString()}, output=${result.tokenUsage.outputTokens.toLocaleString()}`
           );
+        }
+
+        // Handle provider-level failures (timeouts, crashes)
+        // These produce success: false with no filesChanged and no completion signal
+        if (!result.success && !result.iterationComplete && result.filesChanged.length === 0 && result.error) {
+          // Check for BLOCKED signal first
+          if (result.error.includes('BLOCKED')) {
+            this.state.status = 'blocked';
+            this.state.lastError = result.error;
+            try {
+              await this.updateTaskWithBlockedStatus(taskPath, result.error);
+            } catch {
+              // Ignore errors when updating task file
+            }
+            break;
+          }
+
+          // Other provider failures (timeout, crash, etc.) — count as consecutive failure
+          this.log(`Provider execution failed: ${result.error}`);
+          consecutiveFailures++;
+          this.options.onIteration?.({ ...this.state });
+          continue;
         }
 
         // Capture completion signal BEFORE scope/validation checks so it's
@@ -414,19 +443,9 @@ export class Executor {
           break;
         }
 
-        // Verificar bloqueado
-        if (!result.success && result.error) {
-          if (result.error.includes('BLOCKED')) {
-            this.state.status = 'blocked';
-            this.state.lastError = result.error;
-            try {
-              await this.updateTaskWithBlockedStatus(taskPath, result.error);
-            } catch {
-              // Ignore errors when updating task file (e.g., in tests)
-            }
-            break;
-          }
-        }
+        // Note: BLOCKED signal handling was moved to the provider-level
+        // failure check above (before scope/validation), so it's caught
+        // as early as possible.
       }
 
       // Verificar si terminamos por límite de iteraciones
@@ -670,6 +689,46 @@ export class Executor {
       this.logger.debug(`[aidf] ${message}`);
     } else {
       this.logger.info(message);
+    }
+  }
+
+  /**
+   * Wraps a provider.execute() promise with a timeout using Promise.race().
+   * On timeout, returns a failed ExecutionResult so the iteration loop can
+   * increment the failure counter and decide whether to continue or abort.
+   */
+  private async executeWithTimeout(
+    executionPromise: Promise<import('./providers/types.js').ExecutionResult>,
+    timeoutMs: number
+  ): Promise<import('./providers/types.js').ExecutionResult> {
+    if (timeoutMs <= 0) {
+      return executionPromise;
+    }
+
+    let timer: NodeJS.Timeout | undefined;
+
+    const timeoutPromise = new Promise<import('./providers/types.js').ExecutionResult>((resolve) => {
+      timer = setTimeout(() => {
+        this.logger.warn(
+          `Iteration ${this.state.iteration} timed out after ${Math.round(timeoutMs / 1000)}s`
+        );
+        resolve({
+          success: false,
+          output: '',
+          error: `Timeout: iteration exceeded ${Math.round(timeoutMs / 1000)}s limit`,
+          filesChanged: [],
+          iterationComplete: false,
+        });
+      }, timeoutMs);
+    });
+
+    try {
+      const result = await Promise.race([executionPromise, timeoutPromise]);
+      return result;
+    } finally {
+      if (timer) {
+        clearTimeout(timer);
+      }
     }
   }
 

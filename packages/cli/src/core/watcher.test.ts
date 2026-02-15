@@ -72,8 +72,13 @@ vi.mock('../utils/logger.js', () => ({
 describe('Watcher', () => {
   const projectRoot = '/test/project';
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
+    // Re-establish mock behaviors after clearAllMocks
+    mockWatcherInstance.on.mockReturnThis();
+    mockWatcherInstance.close.mockResolvedValue(undefined);
+    const chokidar = await import('chokidar');
+    (chokidar.default.watch as Mock).mockReturnValue(mockWatcherInstance);
     vi.useFakeTimers({ shouldAdvanceTime: true });
 
     // Default: tasks dir exists, no config file, no pending/ subfolder (backward compat)
@@ -658,6 +663,191 @@ describe('Watcher', () => {
       expect(infoCalls).toHaveLength(1);
 
       await watcher.stop();
+      await startPromise;
+    });
+  });
+
+  describe('debounce timing', () => {
+    /**
+     * Helper to extract chokidar event handlers from the mock.
+     */
+    function getChokidarHandlers(): {
+      add: (filePath: string) => void;
+      change: (filePath: string) => void;
+    } {
+      const calls = mockWatcherInstance.on.mock.calls;
+      const handlers: Record<string, (filePath: string) => void> = {};
+      for (const [event, handler] of calls) {
+        handlers[event] = handler;
+      }
+      return {
+        add: handlers['add'],
+        change: handlers['change'],
+      };
+    }
+
+    it('should debounce rapid file changes to a single enqueue', async () => {
+      mockReaddir.mockResolvedValue([]);
+      mockReadFile.mockResolvedValue('# Task\n## Goal\nPending');
+      mockExecuteTask.mockResolvedValue({
+        success: true,
+        status: 'completed' as const,
+        iterations: 1,
+        filesModified: [],
+        taskPath: '/test/project/.ai/tasks/001-task.md',
+      });
+
+      const watcher = new Watcher(projectRoot, { debounceMs: 300 });
+      const startPromise = watcher.start();
+      await vi.advanceTimersByTimeAsync(100);
+
+      const { change } = getChokidarHandlers();
+
+      // Simulate 5 rapid changes to the same file
+      for (let i = 0; i < 5; i++) {
+        change('/test/project/.ai/tasks/001-task.md');
+        await vi.advanceTimersByTimeAsync(50); // 50ms < 300ms debounce
+      }
+
+      // Now wait for debounce to fire
+      await vi.advanceTimersByTimeAsync(400);
+      // Wait for task execution
+      await vi.advanceTimersByTimeAsync(100);
+
+      // Should only enqueue and execute once despite 5 change events
+      expect(mockExecuteTask).toHaveBeenCalledTimes(1);
+
+      await watcher.stop();
+      await startPromise;
+    });
+
+    it('should handle changes to different files independently', async () => {
+      mockReaddir.mockResolvedValue([]);
+      mockReadFile.mockResolvedValue('# Task\n## Goal\nPending');
+      mockExecuteTask.mockResolvedValue({
+        success: true,
+        status: 'completed' as const,
+        iterations: 1,
+        filesModified: [],
+        taskPath: '',
+      });
+
+      const watcher = new Watcher(projectRoot, { debounceMs: 200 });
+      const startPromise = watcher.start();
+      await vi.advanceTimersByTimeAsync(100);
+
+      const { add } = getChokidarHandlers();
+
+      // Two different files added
+      add('/test/project/.ai/tasks/001-first.md');
+      add('/test/project/.ai/tasks/002-second.md');
+
+      // Wait for debounce + execution
+      await vi.advanceTimersByTimeAsync(500);
+
+      expect(mockExecuteTask).toHaveBeenCalledTimes(2);
+
+      await watcher.stop();
+      await startPromise;
+    });
+  });
+
+  describe('config change handling', () => {
+    it('should not execute config file as a task', async () => {
+      mockReaddir.mockResolvedValue([]);
+
+      const watcher = new Watcher(projectRoot);
+      const startPromise = watcher.start();
+      await vi.advanceTimersByTimeAsync(100);
+
+      // Extract change handler from chokidar mock
+      const changeCalls = (mockWatcherInstance.on.mock.calls as [string, unknown][]).filter(
+        (c) => c[0] === 'change'
+      );
+      expect(changeCalls.length).toBeGreaterThan(0);
+
+      const changeHandler = changeCalls[0][1] as (filePath: string) => void;
+      changeHandler('/test/project/.ai/config.yml');
+      await vi.advanceTimersByTimeAsync(600);
+
+      // Config changes should NOT trigger executeTask
+      expect(mockExecuteTask).not.toHaveBeenCalled();
+
+      await watcher.stop();
+      await startPromise;
+    });
+  });
+
+  describe('scanExistingTasks with pending/ directory', () => {
+    it('should scan pending/ subdirectory when it exists', async () => {
+      mockExistsSync.mockImplementation((p: string) => {
+        if (typeof p === 'string' && p.includes('/pending')) return true;
+        if (typeof p === 'string' && p.includes('.ai/tasks')) return true;
+        return false;
+      });
+      mockReaddir.mockImplementation(async (dir: string) => {
+        if (typeof dir === 'string' && dir.includes('pending')) {
+          return ['001-task.md'];
+        }
+        return [];
+      });
+      mockReadFile.mockResolvedValue('# Task\n## Goal\nPending');
+      mockExecuteTask.mockResolvedValue({
+        success: true,
+        status: 'completed' as const,
+        iterations: 1,
+        filesModified: [],
+        taskPath: '/test/project/.ai/tasks/pending/001-task.md',
+      });
+
+      const watcher = new Watcher(projectRoot);
+      const startPromise = watcher.start();
+      await vi.advanceTimersByTimeAsync(200);
+      await watcher.stop();
+      await startPromise;
+
+      expect(mockExecuteTask).toHaveBeenCalledWith(
+        '/test/project/.ai/tasks/pending/001-task.md',
+        expect.any(Object)
+      );
+    });
+  });
+
+  describe('executeTask error recovery', () => {
+    it('should continue watching after task execution throws', async () => {
+      mockReaddir.mockResolvedValue(['001-task.md']);
+      mockReadFile.mockResolvedValue('# Task\n## Goal\nTest');
+      mockExecuteTask.mockRejectedValue(new Error('Provider crashed'));
+
+      const watcher = new Watcher(projectRoot);
+      const startPromise = watcher.start();
+      await vi.advanceTimersByTimeAsync(200);
+
+      const state = watcher.getState();
+      expect(state.tasksFailed).toBe(1);
+      expect(state.status).not.toBe('stopped');
+
+      await watcher.stop();
+      await startPromise;
+    });
+  });
+
+  describe('stopping behavior', () => {
+    it('should not process queue when stopping', async () => {
+      mockReaddir.mockResolvedValue([]);
+
+      const watcher = new Watcher(projectRoot);
+      const startPromise = watcher.start();
+      await vi.advanceTimersByTimeAsync(100);
+
+      // Start stopping
+      const stopPromise = watcher.stop();
+
+      // Try to trigger processing — should be ignored
+      const state = watcher.getState();
+      expect(state.status === 'stopping' || state.status === 'stopped').toBe(true);
+
+      await stopPromise;
       await startPromise;
     });
   });

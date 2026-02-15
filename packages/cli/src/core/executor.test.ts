@@ -1576,6 +1576,132 @@ describe('Executor', () => {
       expect(result.success).toBe(true);
     });
   });
+
+  describe('timeout enforcement', () => {
+    it('should timeout iteration when provider takes too long', async () => {
+      // Provider hangs indefinitely — timeout at 0.1s will fire first
+      mockProvider.execute.mockImplementation(
+        () => new Promise(() => {/* never resolves */})
+      );
+
+      const executor = new Executor({
+        ...mockConfig,
+        execution: {
+          ...mockConfig.execution,
+          timeout_per_iteration: 0.1, // 100ms
+          max_consecutive_failures: 1,
+        },
+      });
+
+      const result = await executor.run('/test/task.md');
+
+      expect(result.success).toBe(false);
+      expect(result.status).toBe('blocked');
+      expect(result.blockedReason).toContain('consecutive failures');
+    }, 10_000);
+
+    it('should not timeout when provider completes within limit', async () => {
+      mockProvider.execute.mockResolvedValue({
+        success: true,
+        output: 'Done',
+        filesChanged: [],
+        iterationComplete: true,
+        completionSignal: '<TASK_COMPLETE>',
+      });
+
+      const executor = new Executor({
+        ...mockConfig,
+        execution: {
+          ...mockConfig.execution,
+          timeout_per_iteration: 300, // 5 minutes
+        },
+      });
+
+      const result = await executor.run('/test/task.md');
+      expect(result.success).toBe(true);
+      expect(result.status).toBe('completed');
+    });
+
+    it('should increment failure count on timeout and continue to next iteration', async () => {
+      // First iteration: times out
+      // Second iteration: completes
+      let callCount = 0;
+      mockProvider.execute.mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          return new Promise(() => {/* never resolves */});
+        }
+        return Promise.resolve({
+          success: true,
+          output: 'Done',
+          filesChanged: [],
+          iterationComplete: true,
+          completionSignal: '<TASK_COMPLETE>',
+        });
+      });
+
+      const executor = new Executor({
+        ...mockConfig,
+        execution: {
+          ...mockConfig.execution,
+          timeout_per_iteration: 0.1, // 100ms
+          max_consecutive_failures: 3,
+        },
+      });
+
+      const result = await executor.run('/test/task.md');
+
+      expect(result.success).toBe(true);
+      expect(result.iterations).toBe(2);
+    }, 10_000);
+
+    it('should skip timeout enforcement when timeoutPerIteration is 0', async () => {
+      mockProvider.execute.mockResolvedValue({
+        success: true,
+        output: 'Done',
+        filesChanged: [],
+        iterationComplete: true,
+        completionSignal: '<TASK_COMPLETE>',
+      });
+
+      const executor = new Executor({
+        ...mockConfig,
+        execution: {
+          ...mockConfig.execution,
+          timeout_per_iteration: 0,
+        },
+      });
+
+      const result = await executor.run('/test/task.md');
+      expect(result.success).toBe(true);
+    });
+
+    it('should log warning when timeout occurs', async () => {
+      mockProvider.execute.mockImplementation(
+        () => new Promise(() => {/* never resolves */})
+      );
+
+      const executor = new Executor({
+        ...mockConfig,
+        execution: {
+          ...mockConfig.execution,
+          timeout_per_iteration: 0.1,
+          max_consecutive_failures: 1,
+        },
+      });
+
+      const loggerSpy = vi.spyOn(
+        (executor as unknown as { logger: { warn: (msg: string) => void } }).logger,
+        'warn'
+      );
+
+      await executor.run('/test/task.md');
+
+      expect(loggerSpy).toHaveBeenCalledWith(
+        expect.stringContaining('timed out')
+      );
+    }, 10_000);
+  });
 });
 
 describe('executeTask', () => {
