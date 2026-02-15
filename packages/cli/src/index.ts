@@ -24,6 +24,7 @@ import { createStatusCommand } from './commands/status.js';
 import { createWatchCommand } from './commands/watch.js';
 import { createHooksCommand } from './commands/hooks.js';
 import { createSkillsCommand } from './commands/skills.js';
+import { createMcpCommand } from './commands/mcp.js';
 
 // Read version from package.json
 const __filename = fileURLToPath(import.meta.url);
@@ -52,5 +53,6 @@ program.addCommand(createStatusCommand());
 program.addCommand(createWatchCommand());
 program.addCommand(createHooksCommand());
 program.addCommand(createSkillsCommand());
+program.addCommand(createMcpCommand());
 
 program.parse();
