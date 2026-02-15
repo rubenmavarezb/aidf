@@ -435,7 +435,7 @@ export interface SkillsConfig {
   enabled?: boolean;
   directories?: string[];
   extras?: string[];
-  /** Block skills with danger-level security warnings. Default: false */
+  /** Block skills with danger-level security warnings. Default: true */
   block_suspicious?: boolean;
 }
 

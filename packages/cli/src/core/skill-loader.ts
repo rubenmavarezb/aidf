@@ -5,6 +5,7 @@ import { existsSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 import type { SkillMetadata, SkillInfo, LoadedSkill, SkillsConfig, SecurityWarning } from '../types/index.js';
+import { Logger } from '../utils/logger.js';
 
 /**
  * Parses the YAML-like frontmatter from a SKILL.md file.
@@ -287,10 +288,12 @@ export function validateSkillSecurity(content: string): SecurityWarning[] {
 export class SkillLoader {
   private projectRoot: string;
   private config: SkillsConfig;
+  private logger: Logger;
 
   constructor(projectRoot: string, config?: SkillsConfig) {
     this.projectRoot = projectRoot;
     this.config = config ?? {};
+    this.logger = new Logger({});
   }
 
   /**
@@ -339,23 +342,24 @@ export class SkillLoader {
       if (warnings.length > 0) {
         const dangerWarnings = warnings.filter(w => w.level === 'danger');
         const warnWarnings = warnings.filter(w => w.level === 'warning');
+        const blockSuspicious = this.config.block_suspicious !== false;
 
         if (dangerWarnings.length > 0) {
-          console.warn(`⚠ Skill "${info.name}" has ${dangerWarnings.length} security concern(s):`);
+          this.logger.warn(`Skill "${info.name}" has ${dangerWarnings.length} security concern(s):`);
           for (const w of dangerWarnings) {
-            console.warn(`  [DANGER] ${w.description}${w.line ? ` (line ${w.line})` : ''}`);
+            this.logger.warn(`  [DANGER] ${w.description}${w.line ? ` (line ${w.line})` : ''}`);
           }
 
-          if (this.config.block_suspicious) {
-            console.warn(`  Skill "${info.name}" blocked (block_suspicious is enabled)`);
+          if (blockSuspicious) {
+            this.logger.warn(`  Skill "${info.name}" blocked (block_suspicious is enabled)`);
             continue;
           }
         }
 
         if (warnWarnings.length > 0) {
-          console.warn(`⚠ Skill "${info.name}" has ${warnWarnings.length} warning(s):`);
+          this.logger.warn(`Skill "${info.name}" has ${warnWarnings.length} warning(s):`);
           for (const w of warnWarnings) {
-            console.warn(`  [WARNING] ${w.description}${w.line ? ` (line ${w.line})` : ''}`);
+            this.logger.warn(`  [WARNING] ${w.description}${w.line ? ` (line ${w.line})` : ''}`);
           }
         }
       }

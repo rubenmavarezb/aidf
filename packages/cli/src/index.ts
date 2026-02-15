@@ -4,6 +4,19 @@ import { Command } from 'commander';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { Logger } from './utils/logger.js';
+
+const _logger = new Logger({});
+
+process.on('unhandledRejection', (reason) => {
+  _logger.error(`Unhandled rejection: ${reason}`);
+  process.exit(1);
+});
+
+process.on('uncaughtException', (error) => {
+  _logger.error(`Uncaught exception: ${error.message}`);
+  process.exit(1);
+});
 import { createInitCommand } from './commands/init.js';
 import { createRunCommand } from './commands/run.js';
 import { createTaskCommand } from './commands/task.js';
