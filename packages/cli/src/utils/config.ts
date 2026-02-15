@@ -2,7 +2,108 @@
 
 import { existsSync } from 'fs';
 import { join } from 'path';
+import { z } from 'zod';
 import type { AidfConfig } from '../types/index.js';
+
+// === Zod Schema for AidfConfig ===
+
+const providerConfigSchema = z.object({
+  type: z.enum(['claude-cli', 'cursor-cli', 'anthropic-api', 'openai-api']),
+  model: z.string().optional(),
+}).optional();
+
+const executionConfigSchema = z.object({
+  max_iterations: z.number().int().positive().max(1000).optional(),
+  max_consecutive_failures: z.number().int().positive().max(100).optional(),
+  timeout_per_iteration: z.number().nonnegative().max(3600).optional(),
+  session_continuation: z.boolean().optional(),
+}).optional();
+
+const permissionsConfigSchema = z.object({
+  scope_enforcement: z.enum(['strict', 'ask', 'permissive']).optional(),
+  auto_commit: z.boolean().optional(),
+  auto_push: z.boolean().optional(),
+  auto_pr: z.boolean().optional(),
+}).optional();
+
+const validationConfigSchema = z.object({
+  pre_commit: z.array(z.string()).optional(),
+  pre_push: z.array(z.string()).optional(),
+  pre_pr: z.array(z.string()).optional(),
+}).optional();
+
+const gitConfigSchema = z.object({
+  commit_prefix: z.string().optional(),
+  branch_prefix: z.string().optional(),
+}).optional();
+
+const notificationsConfigSchema = z.object({
+  level: z.enum(['all', 'errors', 'blocked']).optional(),
+  desktop: z.object({ enabled: z.boolean() }).optional(),
+  slack: z.object({ enabled: z.boolean(), webhook_url: z.string() }).optional(),
+  discord: z.object({ enabled: z.boolean(), webhook_url: z.string() }).optional(),
+  email: z.object({
+    enabled: z.boolean(),
+    smtp_host: z.string(),
+    smtp_port: z.number().int().positive(),
+    smtp_user: z.string(),
+    smtp_pass: z.string(),
+    from: z.string(),
+    to: z.string(),
+  }).optional(),
+  webhook: z.object({
+    enabled: z.boolean(),
+    url: z.string(),
+    headers: z.record(z.string()).optional(),
+  }).optional(),
+}).optional();
+
+const skillsConfigSchema = z.object({
+  enabled: z.boolean().optional(),
+  directories: z.array(z.string()).optional(),
+  extras: z.array(z.string()).optional(),
+  block_suspicious: z.boolean().optional(),
+}).optional();
+
+const securityConfigSchema = z.object({
+  skip_permissions: z.boolean().optional(),
+  warn_on_skip: z.boolean().optional(),
+  commands: z.object({
+    allowed: z.array(z.string()).optional(),
+    blocked: z.array(z.string()).optional(),
+    strict: z.boolean().optional(),
+  }).optional(),
+}).optional();
+
+export const aidfConfigSchema = z.object({
+  version: z.number().default(1),
+  provider: providerConfigSchema,
+  execution: executionConfigSchema,
+  permissions: permissionsConfigSchema,
+  validation: validationConfigSchema,
+  git: gitConfigSchema,
+  notifications: notificationsConfigSchema,
+  skills: skillsConfigSchema,
+  security: securityConfigSchema,
+}).passthrough(); // Allow extra fields for forward compatibility
+
+/**
+ * Validates a normalized config against the Zod schema.
+ * Returns the validated config or throws a descriptive error.
+ */
+export function validateConfig(config: unknown): AidfConfig {
+  const result = aidfConfigSchema.safeParse(config);
+  if (!result.success) {
+    const issues = result.error.issues.map(issue => {
+      const path = issue.path.join('.');
+      return `  - ${path || 'root'}: ${issue.message}`;
+    });
+    throw new Error(
+      `Invalid AIDF config:\n${issues.join('\n')}`
+    );
+  }
+  return result.data as AidfConfig;
+}
 
 /**
  * Resolves environment variable references in configuration strings.
@@ -172,7 +273,8 @@ export async function loadConfigFromFile(configPath: string): Promise<AidfConfig
     ? JSON.parse(content)
     : yaml.parse(content);
 
-  return normalizeConfig(raw);
+  const normalized = normalizeConfig(raw);
+  return validateConfig(normalized);
 }
 
 /**

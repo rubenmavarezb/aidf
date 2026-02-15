@@ -29,6 +29,7 @@ export class ParallelExecutor {
   private results: ParallelTaskResult[] = [];
   private dependencies: TaskDependency[] = [];
   private fileConflicts: string[] = [];
+  private conflictedTasks: Set<string> = new Set(); // tasks to retry due to runtime conflicts
 
   constructor(options: ParallelExecutorOptions) {
     this.options = options;
@@ -221,6 +222,7 @@ export class ParallelExecutor {
 
   /**
    * Executes task waves with concurrency control within each wave.
+   * After each wave, retries tasks that experienced runtime file conflicts.
    */
   private async executeWithConcurrency(
     waves: string[][],
@@ -234,7 +236,34 @@ export class ParallelExecutor {
       }
 
       // Execute tasks in this wave with concurrency limit
+      this.conflictedTasks.clear();
       await this.executeWave(wave, parsedTasks);
+
+      // Retry tasks that had runtime file conflicts (serialized, not parallel)
+      if (this.conflictedTasks.size > 0) {
+        const retryTasks = [...this.conflictedTasks].filter(taskPath => {
+          // Only retry if the task didn't already succeed
+          const existingResult = this.results.find(r => r.taskPath === taskPath);
+          return existingResult && !existingResult.result.success;
+        });
+
+        if (retryTasks.length > 0) {
+          this.logger.info(`\n--- Retrying ${retryTasks.length} conflicted task(s) ---`);
+
+          // Remove previous failed results for these tasks (they'll be re-added)
+          this.results = this.results.filter(r => !retryTasks.includes(r.taskPath));
+
+          // Execute retries one at a time to avoid re-conflicts
+          for (const taskPath of retryTasks) {
+            const colorIdx = wave.indexOf(taskPath) % TASK_COLORS.length;
+            await this.executeOneTask(
+              taskPath,
+              parsedTasks.get(taskPath)!,
+              TASK_COLORS[Math.max(0, colorIdx)]
+            );
+          }
+        }
+      }
     }
   }
 
@@ -307,6 +336,8 @@ export class ParallelExecutor {
           if (conflicts.length > 0) {
             taskLogger.warn(`File conflict detected: ${conflicts.join(', ')}`);
             this.fileConflicts.push(...conflicts);
+            // Mark this task for retry after the current wave
+            this.conflictedTasks.add(taskPath);
           }
 
           // Track active files

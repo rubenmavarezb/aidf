@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { resolveConfigValue, resolveConfig, detectPlaintextSecrets, normalizeConfig, findConfigFile, getDefaultConfig, loadConfigFromFile, findAndLoadConfig } from './config.js';
+import { resolveConfigValue, resolveConfig, detectPlaintextSecrets, normalizeConfig, findConfigFile, getDefaultConfig, loadConfigFromFile, findAndLoadConfig, validateConfig } from './config.js';
 
 describe('resolveConfigValue', () => {
   const originalEnv = process.env;
@@ -631,5 +631,145 @@ describe('config integration: init → normalizeConfig → Executor options', ()
 
     // permissions.auto_commit should win
     expect(config.permissions?.auto_commit ?? true).toBe(false);
+  });
+});
+
+describe('validateConfig', () => {
+  it('should accept a valid minimal config', () => {
+    const config = { version: 1 };
+    const result = validateConfig(config);
+    expect(result.version).toBe(1);
+  });
+
+  it('should accept a full valid config', () => {
+    const config = getDefaultConfig();
+    const result = validateConfig(config);
+    expect(result.version).toBe(1);
+    expect(result.provider.type).toBe('claude-cli');
+  });
+
+  it('should default version to 1 when missing', () => {
+    const config = { provider: { type: 'claude-cli' } };
+    const result = validateConfig(config);
+    expect(result.version).toBe(1);
+  });
+
+  it('should reject invalid provider type', () => {
+    const config = { version: 1, provider: { type: 'invalid-provider' } };
+    expect(() => validateConfig(config)).toThrow('Invalid AIDF config');
+  });
+
+  it('should reject invalid scope_enforcement value', () => {
+    const config = {
+      version: 1,
+      permissions: { scope_enforcement: 'yolo' },
+    };
+    expect(() => validateConfig(config)).toThrow('Invalid AIDF config');
+  });
+
+  it('should reject negative max_iterations', () => {
+    const config = {
+      version: 1,
+      execution: { max_iterations: -5 },
+    };
+    expect(() => validateConfig(config)).toThrow('Invalid AIDF config');
+  });
+
+  it('should reject non-integer max_iterations', () => {
+    const config = {
+      version: 1,
+      execution: { max_iterations: 3.5 },
+    };
+    expect(() => validateConfig(config)).toThrow('Invalid AIDF config');
+  });
+
+  it('should reject invalid notification level', () => {
+    const config = {
+      version: 1,
+      notifications: { level: 'verbose' },
+    };
+    expect(() => validateConfig(config)).toThrow('Invalid AIDF config');
+  });
+
+  it('should provide descriptive error messages', () => {
+    const config = {
+      version: 'not-a-number',
+      provider: { type: 'unsupported' },
+      execution: { max_iterations: -1 },
+    };
+    try {
+      validateConfig(config);
+      expect.fail('Should have thrown');
+    } catch (error) {
+      const msg = (error as Error).message;
+      expect(msg).toContain('Invalid AIDF config');
+      expect(msg).toContain('version');
+    }
+  });
+
+  it('should allow extra fields (forward compatibility)', () => {
+    const config = {
+      version: 1,
+      custom_field: 'some value',
+      future_feature: { enabled: true },
+    };
+    const result = validateConfig(config);
+    expect(result.version).toBe(1);
+    // Extra fields should be preserved
+    expect((result as unknown as Record<string, unknown>).custom_field).toBe('some value');
+  });
+
+  it('should accept config with all optional sections', () => {
+    const config = {
+      version: 1,
+      provider: { type: 'anthropic-api', model: 'claude-sonnet-4-5-20250929' },
+      execution: {
+        max_iterations: 25,
+        max_consecutive_failures: 5,
+        timeout_per_iteration: 120,
+        session_continuation: true,
+      },
+      permissions: {
+        scope_enforcement: 'strict',
+        auto_commit: false,
+        auto_push: false,
+        auto_pr: true,
+      },
+      validation: {
+        pre_commit: ['pnpm lint', 'pnpm typecheck'],
+        pre_push: ['pnpm test'],
+        pre_pr: ['pnpm build'],
+      },
+      git: {
+        commit_prefix: 'feat:',
+        branch_prefix: 'feature/',
+      },
+      skills: {
+        enabled: true,
+        directories: ['/custom/skills'],
+      },
+      security: {
+        skip_permissions: false,
+        warn_on_skip: true,
+      },
+    };
+    const result = validateConfig(config);
+    expect(result.provider.type).toBe('anthropic-api');
+    expect(result.execution.max_iterations).toBe(25);
+    expect(result.permissions.scope_enforcement).toBe('strict');
+  });
+
+  it('should accept backward-compatible normalized config', () => {
+    // Simulate a config that went through normalizeConfig
+    const raw = {
+      framework: 'aidf',
+      version: '1.0',
+      behavior: { autoCommit: false, scopeEnforcement: 'strict' },
+      validation: { lint: 'pnpm lint', test: 'pnpm test' },
+    };
+    const normalized = normalizeConfig(raw);
+    const result = validateConfig(normalized);
+    expect(result.version).toBe(1);
+    expect(result.permissions.auto_commit).toBe(false);
   });
 });

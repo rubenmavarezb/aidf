@@ -446,4 +446,145 @@ describe('ParallelExecutor', () => {
       );
     });
   });
+
+  describe('runtime conflict retry', () => {
+    it('should retry a failed task that had runtime file conflicts', async () => {
+      let taskACallCount = 0;
+      // Shared barrier: task-b registers file first, then task-a detects conflict
+      let taskBRegistered: () => void;
+      const taskBRegisteredPromise = new Promise<void>(resolve => { taskBRegistered = resolve; });
+
+      (executeTask as Mock).mockImplementation(async (taskPath: string, options?: { onIteration?: (state: Record<string, unknown>) => void }) => {
+        if (taskPath.includes('task-b')) {
+          // task-b: register file first, then succeed
+          if (options?.onIteration) {
+            options.onIteration({
+              status: 'running',
+              iteration: 1,
+              filesModified: ['src/shared-file.ts'],
+              validationResults: [],
+            });
+          }
+          taskBRegistered();
+          await new Promise(resolve => setTimeout(resolve, 10));
+          return {
+            success: true,
+            status: 'completed',
+            iterations: 1,
+            filesModified: ['src/shared-file.ts'],
+            taskPath,
+          };
+        }
+
+        // task-a: wait for task-b to register, then report conflict and fail on first call
+        taskACallCount++;
+        if (taskACallCount === 1) {
+          await taskBRegisteredPromise;
+          if (options?.onIteration) {
+            options.onIteration({
+              status: 'running',
+              iteration: 1,
+              filesModified: ['src/shared-file.ts'],
+              validationResults: [],
+            });
+          }
+          return {
+            success: false,
+            status: 'failed',
+            iterations: 1,
+            filesModified: ['src/shared-file.ts'],
+            error: 'Conflict detected',
+            taskPath,
+          };
+        }
+        // Retry: succeed
+        return {
+          success: true,
+          status: 'completed',
+          iterations: 1,
+          filesModified: ['src/shared-file.ts'],
+          taskPath,
+        };
+      });
+
+      const executor = new ParallelExecutor({ ...defaultOptions, concurrency: 2 });
+      const result = await executor.run([
+        '/test/tasks/task-a.md',
+        '/test/tasks/task-b.md',
+      ]);
+
+      // task-a should have been called at least twice (initial + retry)
+      expect(taskACallCount).toBeGreaterThanOrEqual(2);
+      // Overall result should show completion
+      expect(result.totalTasks).toBe(2);
+    });
+
+    it('should not retry successful tasks even if conflicts were detected', async () => {
+      const callCounts: Record<string, number> = {};
+
+      (executeTask as Mock).mockImplementation(async (taskPath: string, options?: { onIteration?: (state: Record<string, unknown>) => void }) => {
+        callCounts[taskPath] = (callCounts[taskPath] || 0) + 1;
+
+        // Report conflicts but succeed anyway
+        if (options?.onIteration) {
+          options.onIteration({
+            status: 'running',
+            iteration: 1,
+            filesModified: ['src/shared-file.ts'],
+            validationResults: [],
+          });
+        }
+        return {
+          success: true,
+          status: 'completed',
+          iterations: 1,
+          filesModified: ['src/shared-file.ts'],
+          taskPath,
+        };
+      });
+
+      const executor = new ParallelExecutor({ ...defaultOptions, concurrency: 2 });
+      await executor.run([
+        '/test/tasks/task-a.md',
+        '/test/tasks/task-b.md',
+      ]);
+
+      // Each task should only be called once since they all succeeded
+      for (const count of Object.values(callCounts)) {
+        expect(count).toBe(1);
+      }
+    });
+
+    it('should track conflicted tasks in fileConflicts array', async () => {
+      (executeTask as Mock).mockImplementation(async (taskPath: string, options?: { onIteration?: (state: Record<string, unknown>) => void }) => {
+        if (options?.onIteration) {
+          options.onIteration({
+            status: 'running',
+            iteration: 1,
+            filesModified: ['src/shared-file.ts'],
+            validationResults: [],
+          });
+        }
+        await new Promise(resolve => setTimeout(resolve, 10));
+        return {
+          success: true,
+          status: 'completed',
+          iterations: 1,
+          filesModified: ['src/shared-file.ts'],
+          taskPath,
+        };
+      });
+
+      const executor = new ParallelExecutor({ ...defaultOptions, concurrency: 2 });
+      const result = await executor.run([
+        '/test/tasks/task-a.md',
+        '/test/tasks/task-b.md',
+      ]);
+
+      // File conflicts may or may not be detected depending on timing,
+      // but the structure should be maintained
+      expect(result.fileConflicts).toBeDefined();
+      expect(Array.isArray(result.fileConflicts)).toBe(true);
+    });
+  });
 });
