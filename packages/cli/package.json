@@ -1,7 +1,7 @@
 {
   "name": "aidf",
   "version": "0.7.0",
-  "description": "AI-Integrated Development Framework CLI",
+  "description": "AI-Integrated Development Framework — task runner with scope enforcement, MCP server, and structured context for AI agents",
   "type": "module",
   "bin": {
     "aidf": "./dist/index.js"
@@ -57,7 +57,16 @@
     "automation",
     "claude",
     "anthropic",
-    "aidf"
+    "aidf",
+    "mcp",
+    "model-context-protocol",
+    "mcp-server",
+    "ai-agents",
+    "cursor",
+    "copilot",
+    "agentskills",
+    "task-runner",
+    "scope-enforcement"
   ],
   "license": "MIT",
   "author": "rubenmavarezb",
