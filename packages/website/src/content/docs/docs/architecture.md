@@ -107,6 +107,7 @@ flowchart TD
 - **Validation** — Runs the commands listed in `config.yml` under `validation.pre_commit` (typically lint, typecheck).
 - **Completion detection** — The AI signals it's done by outputting `<TASK_COMPLETE>` or `<DONE>`. If it can't proceed, it outputs `<TASK_BLOCKED>` with a reason.
 - **Iteration limit** — Prevents runaway execution. Configurable via `execution.max_iterations`.
+- **Timeout enforcement** — Each iteration is wrapped in a `Promise.race()` against a timeout timer. If an iteration exceeds `timeout_per_iteration` seconds, it is terminated and counted as a failure.
 
 ---
 
@@ -170,7 +171,7 @@ flowchart TD
     style CONFLICT fill:#ffcdd2,stroke:#c62828
 ```
 
-Tasks touching different files run simultaneously. Tasks with overlapping scopes run one after another to prevent conflicts.
+Tasks touching different files run simultaneously. Tasks with overlapping scopes run one after another to prevent conflicts. If a runtime conflict is detected (e.g., two tasks unexpectedly modify the same file), the conflicting task is automatically retried after the other completes.
 
 ---
 
@@ -191,3 +192,17 @@ stateDiagram-v2
 ```
 
 The executor writes a `## Status` section to the task file with execution logs, files modified, and the final outcome.
+
+---
+
+## Config Validation
+
+Configuration files (`.ai/config.yml`) are validated at load time using [Zod](https://zod.dev) schemas. Invalid or unknown fields produce clear error messages before execution begins, preventing misconfiguration from causing silent failures at runtime.
+
+---
+
+## MCP Server
+
+AIDF includes a built-in MCP (Model Context Protocol) server that exposes project context, tasks, and operations as MCP tools and resources. This allows external AI clients (such as Claude Desktop or Cursor) to interact with your AIDF project programmatically.
+
+The MCP server is started via `aidf mcp serve` and communicates over stdio. See the [MCP Integration](/aidf/docs/integrations/#mcp-integration) section for details on available tools, resources, and setup.

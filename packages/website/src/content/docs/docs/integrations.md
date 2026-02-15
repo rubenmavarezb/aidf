@@ -343,6 +343,68 @@ Only output <TASK_COMPLETE> if ALL items are checked.
 
 Always load AGENTS.md first, which contains the actual directory structure.
 
+---
+
+## MCP Integration
+
+AIDF includes a built-in [MCP](https://modelcontextprotocol.io) (Model Context Protocol) server that exposes your project's context, tasks, and operations as tools and resources. This allows AI clients like Claude Desktop or Cursor to interact with AIDF without using the CLI directly.
+
+### Starting the MCP Server
+
+```bash
+aidf mcp serve
+```
+
+This starts the server on stdio, ready to be connected by any MCP-compatible client.
+
+### Installing for a Client
+
+```bash
+aidf mcp install                        # defaults to claude-desktop
+aidf mcp install --target cursor        # generate config for Cursor
+```
+
+This prints the appropriate configuration JSON for the selected client.
+
+### Available Tools
+
+| Tool | Description |
+|------|-------------|
+| `aidf_list_tasks` | List all tasks in the project with their status |
+| `aidf_get_context` | Load the full project context (AGENTS.md + roles + skills) |
+| `aidf_validate` | Run validation commands (lint, typecheck, tests) |
+| `aidf_create_task` | Create a new task from a description |
+| `aidf_analyze_project` | Analyze the project and return detected stack info |
+
+### Available Resources
+
+| URI | Description |
+|-----|-------------|
+| `aidf://agents` | The project's AGENTS.md content |
+| `aidf://config` | The resolved config.yml |
+| `aidf://tasks/{name}` | A specific task file by name |
+| `aidf://roles/{name}` | A specific role file by name |
+
+### Example: Claude Desktop Setup
+
+Add the following to your Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "aidf": {
+      "command": "aidf",
+      "args": ["mcp", "serve"],
+      "cwd": "/path/to/your/project"
+    }
+  }
+}
+```
+
+Or run `aidf mcp install` from your project directory to generate this automatically.
+
+---
+
 ### Context window too small
 
 Prioritize loading order:
