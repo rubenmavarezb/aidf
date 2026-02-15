@@ -520,7 +520,7 @@ describe('ParallelExecutor', () => {
     });
 
     it('should not retry successful tasks even if conflicts were detected', async () => {
-      let callCounts: Record<string, number> = {};
+      const callCounts: Record<string, number> = {};
 
       (executeTask as Mock).mockImplementation(async (taskPath: string, options?: { onIteration?: (state: Record<string, unknown>) => void }) => {
         callCounts[taskPath] = (callCounts[taskPath] || 0) + 1;

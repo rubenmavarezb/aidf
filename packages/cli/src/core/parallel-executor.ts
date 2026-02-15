@@ -228,8 +228,6 @@ export class ParallelExecutor {
     waves: string[][],
     parsedTasks: Map<string, ParsedTask>
   ): Promise<void> {
-    const maxRetries = 1; // Retry conflicted tasks at most once
-
     for (let waveIdx = 0; waveIdx < waves.length; waveIdx++) {
       const wave = waves[waveIdx];
 
