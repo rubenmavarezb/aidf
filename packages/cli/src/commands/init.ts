@@ -14,6 +14,8 @@ import {
   getProjectName,
   type DetectedValidation,
 } from '../utils/files.js';
+import { analyzeProject, formatProfile } from '../core/project-analyzer.js';
+import { createProvider } from '../core/providers/index.js';
 
 interface InitAnswers {
   projectName: string;
@@ -89,6 +91,7 @@ export function createInitCommand(): Command {
     .option('--log-format <format>', 'Log format (text|json)', 'text')
     .option('--log-file <path>', 'Write logs to file')
     .option('--log-rotate', 'Enable log rotation (append timestamp to filename)')
+    .option('--smart', 'Use AI to generate project-aware AGENTS.md and config.yml')
     .action(async (options) => {
       const logger = new Logger({
         verbose: options.verbose,
@@ -114,7 +117,7 @@ export function createInitCommand(): Command {
 
 async function runInit(
   projectPath: string,
-  options: { yes?: boolean; force?: boolean; verbose?: boolean },
+  options: { yes?: boolean; force?: boolean; verbose?: boolean; smart?: boolean },
   logger: Logger
 ): Promise<void> {
   const aiDir = join(projectPath, '.ai');
@@ -259,8 +262,132 @@ async function runInit(
 
   logger.stopSpinner(true, 'AIDF initialized successfully!');
 
-  // Step 9: Show next steps
+  // Step 9: Smart init (optional)
+  if (options.smart) {
+    await runSmartInit(projectPath, aiDir, logger);
+  }
+
+  // Step 10: Show next steps
   printNextSteps(answers, detectedCommands, logger);
+}
+
+async function runSmartInit(
+  projectPath: string,
+  aiDir: string,
+  logger: Logger,
+): Promise<void> {
+  // Step 1: Analyze the project
+  logger.startSpinner('Analyzing project...');
+  const profile = analyzeProject(projectPath);
+  logger.stopSpinner(true, 'Project analyzed');
+
+  console.log('');
+  console.log(chalk.bold(formatProfile(profile)));
+  console.log('');
+
+  // Step 2: Confirm with user
+  const { proceed } = await inquirer.prompt([{
+    type: 'confirm',
+    name: 'proceed',
+    message: 'Generate AI-customized AGENTS.md and config.yml based on this profile?',
+    default: true,
+  }]);
+
+  if (!proceed) {
+    logger.info('Smart init skipped. You can customize .ai/AGENTS.md manually.');
+    return;
+  }
+
+  // Step 3: Load the smart init prompt template
+  let promptTemplate: string;
+  const promptTemplatePath = join(aiDir, 'prompts', 'smart-init.md');
+  if (!existsSync(promptTemplatePath)) {
+    const templatesDir = findTemplatesDir();
+    const fallbackPath = join(templatesDir, 'prompts', 'smart-init.md');
+    if (!existsSync(fallbackPath)) {
+      logger.warn('Smart init prompt template not found. Skipping AI generation.');
+      return;
+    }
+    promptTemplate = readFileSync(fallbackPath, 'utf-8');
+  } else {
+    promptTemplate = readFileSync(promptTemplatePath, 'utf-8');
+  }
+
+  // Step 4: Build the prompt
+  const prompt = promptTemplate
+    .replace('{{PROJECT_PROFILE}}', formatProfile(profile))
+    .replace('{{PROJECT_PATH}}', projectPath);
+
+  // Step 5: Call the provider
+  logger.startSpinner('Generating project-specific configuration with AI...');
+
+  const provider = createProvider('claude-cli', projectPath);
+  const isAvailable = await provider.isAvailable();
+  if (!isAvailable) {
+    logger.stopSpinner(false, 'AI provider not available');
+    logger.warn('Claude CLI not found. Install it from https://claude.ai/code');
+    logger.info('You can customize .ai/AGENTS.md manually instead.');
+    return;
+  }
+
+  const result = await provider.execute(prompt, { timeout: 120 });
+  logger.stopSpinner(true, 'AI generation complete');
+
+  if (!result.success || !result.output) {
+    logger.warn('AI generation failed. You can customize .ai/AGENTS.md manually.');
+    return;
+  }
+
+  // Step 6: Parse the AI output for agents.md and config.yml blocks
+  const agentsMatch = result.output.match(/```agents\.md\n([\s\S]*?)```/);
+  const configMatch = result.output.match(/```config\.yml\n([\s\S]*?)```/);
+
+  if (!agentsMatch && !configMatch) {
+    logger.warn('Could not parse AI output. You can customize .ai/AGENTS.md manually.');
+    logger.debug('AI output:');
+    logger.debug(result.output);
+    return;
+  }
+
+  // Step 7: Show diff summary and confirm
+  const changes: string[] = [];
+  if (agentsMatch) changes.push('.ai/AGENTS.md');
+  if (configMatch) changes.push('.ai/config.yml');
+
+  console.log('');
+  console.log(chalk.bold('AI generated the following files:'));
+  for (const file of changes) {
+    console.log(`  ${chalk.green('+')} ${file}`);
+  }
+  console.log('');
+
+  const { apply } = await inquirer.prompt([{
+    type: 'confirm',
+    name: 'apply',
+    message: 'Apply AI-generated configuration?',
+    default: true,
+  }]);
+
+  if (!apply) {
+    logger.info('Changes not applied. You can customize .ai/AGENTS.md manually.');
+    return;
+  }
+
+  // Step 8: Write the files
+  if (agentsMatch) {
+    writeFileSync(join(aiDir, 'AGENTS.md'), agentsMatch[1]);
+    logger.success('Updated .ai/AGENTS.md with project-specific content');
+  }
+
+  if (configMatch) {
+    const configHeader = `# AIDF (AI Development Framework) Configuration
+# Generated by aidf init --smart
+# Framework docs: https://rubenmavarezb.github.io/aidf/docs/concepts/
+
+`;
+    writeFileSync(join(aiDir, 'config.yml'), configHeader + configMatch[1]);
+    logger.success('Updated .ai/config.yml with project-specific settings');
+  }
 }
 
 function getDefaults(projectName: string): InitAnswers {
