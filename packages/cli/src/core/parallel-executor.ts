@@ -345,7 +345,7 @@ export class ParallelExecutor {
             this.activeFiles.set(file, taskPath);
           }
         },
-      });
+      }, this.options.deps);
 
       const completedAt = new Date();
 

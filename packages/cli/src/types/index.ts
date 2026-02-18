@@ -365,6 +365,7 @@ export interface ParallelExecutorOptions {
   logFormat?: 'text' | 'json';
   logFile?: string;
   logRotate?: boolean;
+  deps?: Partial<ExecutorDependencies>;
   onTaskStart?: (taskPath: string) => void;
   onTaskComplete?: (taskPath: string, result: ExecutorResult) => void;
 }
@@ -446,6 +447,19 @@ export interface SecurityWarning {
   pattern: string;
   description: string;
   line?: number;
+}
+
+// === Executor Dependency Injection Types ===
+
+export interface ExecutorDependencies {
+  git: import('simple-git').SimpleGit;
+  fs: typeof import('fs/promises');
+  createScopeGuard: (scope: TaskScope, mode: ScopeMode) => import('../core/safety.js').ScopeGuard;
+  createValidator: (config: ValidationConfig, cwd: string) => import('../core/validator.js').Validator;
+  createProvider: (type: import('../core/providers/index.js').ProviderType, cwd: string, apiKey?: string) => import('../core/providers/types.js').Provider;
+  notificationService: import('../utils/notifications.js').NotificationService;
+  logger: import('../utils/logger.js').Logger;
+  moveTaskFile: (taskPath: string, status: 'pending' | 'completed' | 'blocked') => string;
 }
 
 // === Security Types ===

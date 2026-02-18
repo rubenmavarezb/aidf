@@ -1,18 +1,11 @@
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { Executor, executeTask } from './executor.js';
-import type { AidfConfig, LoadedContext, ExecutorOptions } from '../types/index.js';
+import type { AidfConfig, LoadedContext, ExecutorOptions, ExecutorDependencies } from '../types/index.js';
+import type { SimpleGit } from 'simple-git';
 
-// Hoisted mocks (available inside vi.mock factories)
-const { mockPreCommit } = vi.hoisted(() => ({
-  mockPreCommit: vi.fn().mockResolvedValue({
-    phase: 'pre_commit',
-    passed: true,
-    results: [],
-    totalDuration: 0,
-  }),
-}));
-
-// Mock dependencies
+// We still need vi.mock for modules that PreFlightPhase imports directly
+// (loadContext, estimateContextSize, resolveConfig, detectPlaintextSecrets)
+// and prompt builders used by ExecutionPhase
 vi.mock('./context-loader.js', async () => {
   const actual = await vi.importActual<typeof import('./context-loader.js')>('./context-loader.js');
   return {
@@ -22,37 +15,9 @@ vi.mock('./context-loader.js', async () => {
   };
 });
 
-vi.mock('./providers/index.js', () => ({
-  createProvider: vi.fn(() => ({
-    name: 'mock-provider',
-    execute: vi.fn(),
-    isAvailable: vi.fn().mockResolvedValue(true),
-  })),
-}));
-
 vi.mock('./providers/claude-cli.js', () => ({
   buildIterationPrompt: vi.fn(() => 'mock prompt'),
   buildContinuationPrompt: vi.fn(() => 'mock continuation prompt'),
-}));
-
-vi.mock('./validator.js', () => {
-  const ValidatorMock = vi.fn().mockImplementation(() => ({
-    preCommit: mockPreCommit,
-  })) as Mock & { formatReport: Mock };
-  ValidatorMock.formatReport = vi.fn((summary: { passed: boolean }) =>
-    summary.passed ? '## ✅ Validation: pre_commit\n**Status:** PASSED' : '## ❌ Validation: pre_commit\n**Status:** FAILED'
-  );
-  return { Validator: ValidatorMock };
-});
-
-vi.mock('simple-git', () => ({
-  simpleGit: vi.fn(() => ({
-    checkout: vi.fn().mockResolvedValue(undefined),
-    add: vi.fn().mockResolvedValue(undefined),
-    commit: vi.fn().mockResolvedValue(undefined),
-    push: vi.fn().mockResolvedValue(undefined),
-    raw: vi.fn().mockResolvedValue(undefined),
-  })),
 }));
 
 vi.mock('../utils/files.js', () => ({
@@ -61,10 +26,48 @@ vi.mock('../utils/files.js', () => ({
 
 // Import mocked modules
 import { loadContext } from './context-loader.js';
-import { createProvider } from './providers/index.js';
 import { buildIterationPrompt, buildContinuationPrompt } from './providers/claude-cli.js';
 import { moveTaskFile } from '../utils/files.js';
-import { simpleGit } from 'simple-git';
+
+function createMockGit(): SimpleGit {
+  return {
+    checkout: vi.fn().mockResolvedValue(undefined),
+    add: vi.fn().mockResolvedValue(undefined),
+    commit: vi.fn().mockResolvedValue(undefined),
+    push: vi.fn().mockResolvedValue(undefined),
+    raw: vi.fn().mockResolvedValue(undefined),
+  } as unknown as SimpleGit;
+}
+
+function createMockProvider() {
+  return {
+    name: 'mock-provider',
+    execute: vi.fn(),
+    isAvailable: vi.fn().mockResolvedValue(true),
+  };
+}
+
+function createMockDeps(overrides?: Partial<ExecutorDependencies>): Partial<ExecutorDependencies> {
+  const mockGit = createMockGit();
+  const mockProvider = createMockProvider();
+
+  return {
+    git: mockGit,
+    createScopeGuard: undefined, // Use default ScopeGuard
+    createValidator: vi.fn(() => ({
+      preCommit: vi.fn().mockResolvedValue({
+        phase: 'pre_commit',
+        passed: true,
+        results: [],
+        totalDuration: 0,
+      }),
+    })) as unknown as ExecutorDependencies['createValidator'],
+    createProvider: vi.fn(() => mockProvider),
+    notificationService: { notifyResult: vi.fn() } as unknown as ExecutorDependencies['notificationService'],
+    moveTaskFile: moveTaskFile as unknown as ExecutorDependencies['moveTaskFile'],
+    ...overrides,
+  };
+}
 
 describe('Executor', () => {
   const mockConfig: AidfConfig = {
@@ -135,31 +138,22 @@ describe('Executor', () => {
     },
   };
 
-  let mockProvider: { execute: Mock; isAvailable: Mock };
+  let mockDeps: Partial<ExecutorDependencies>;
+  let mockProvider: ReturnType<typeof createMockProvider>;
 
   beforeEach(() => {
     vi.clearAllMocks();
 
     (loadContext as Mock).mockResolvedValue(mockContext);
 
-    mockProvider = {
-      execute: vi.fn(),
-      isAvailable: vi.fn().mockResolvedValue(true),
-    };
-    (createProvider as Mock).mockReturnValue(mockProvider);
-
-    // Default: validation passes
-    mockPreCommit.mockResolvedValue({
-      phase: 'pre_commit',
-      passed: true,
-      results: [],
-      totalDuration: 0,
-    });
+    mockDeps = createMockDeps();
+    mockProvider = (mockDeps.createProvider as Mock).mock.results[0]?.value ?? createMockProvider();
+    (mockDeps.createProvider as Mock).mockReturnValue(mockProvider);
   });
 
   describe('constructor', () => {
     it('should initialize with default options merged with config', () => {
-      const executor = new Executor(mockConfig);
+      const executor = new Executor(mockConfig, {}, process.cwd(), mockDeps);
       const state = executor.getState();
 
       expect(state.status).toBe('idle');
@@ -173,10 +167,18 @@ describe('Executor', () => {
         maxIterations: 10,
         verbose: true,
       };
-      const executor = new Executor(mockConfig, options);
+      const executor = new Executor(mockConfig, options, process.cwd(), mockDeps);
+      expect(executor).toBeDefined();
+    });
 
-      // The executor should use overridden options
-      // We can verify this indirectly through behavior
+    it('should use injected dependencies when provided', () => {
+      const executor = new Executor(mockConfig, {}, process.cwd(), mockDeps);
+      expect(executor).toBeDefined();
+      expect(mockDeps.createProvider).toHaveBeenCalled();
+    });
+
+    it('should create default dependencies when deps is omitted', () => {
+      const executor = new Executor(mockConfig);
       expect(executor).toBeDefined();
     });
   });
@@ -191,7 +193,7 @@ describe('Executor', () => {
         completionSignal: '<TASK_COMPLETE>',
       });
 
-      const executor = new Executor(mockConfig);
+      const executor = new Executor(mockConfig, {}, process.cwd(), mockDeps);
       const result = await executor.run('/test/task.md');
 
       expect(result.success).toBe(true);
@@ -210,7 +212,7 @@ describe('Executor', () => {
       const executor = new Executor({
         ...mockConfig,
         execution: { ...mockConfig.execution, max_iterations: 3 },
-      });
+      }, {}, process.cwd(), mockDeps);
       const result = await executor.run('/test/task.md');
 
       expect(result.success).toBe(false);
@@ -220,18 +222,17 @@ describe('Executor', () => {
     });
 
     it('should stop after consecutive failures', async () => {
-      // Mock scope violations that cause failures
       mockProvider.execute.mockResolvedValue({
         success: true,
         output: 'Made changes',
-        filesChanged: ['node_modules/bad-file.js'], // Forbidden path
+        filesChanged: ['node_modules/bad-file.js'],
         iterationComplete: false,
       });
 
       const executor = new Executor({
         ...mockConfig,
         execution: { ...mockConfig.execution, max_consecutive_failures: 2 },
-      });
+      }, {}, process.cwd(), mockDeps);
       const result = await executor.run('/test/task.md');
 
       expect(result.success).toBe(false);
@@ -258,7 +259,7 @@ describe('Executor', () => {
       const executor = new Executor({
         ...mockConfig,
         permissions: { ...mockConfig.permissions, auto_commit: true },
-      });
+      }, {}, process.cwd(), mockDeps);
       const result = await executor.run('/test/task.md');
 
       expect(result.success).toBe(true);
@@ -267,7 +268,7 @@ describe('Executor', () => {
     });
 
     it('should handle dry run mode', async () => {
-      const executor = new Executor(mockConfig, { dryRun: true });
+      const executor = new Executor(mockConfig, { dryRun: true }, process.cwd(), mockDeps);
       const result = await executor.run('/test/task.md');
 
       expect(mockProvider.execute).not.toHaveBeenCalled();
@@ -283,7 +284,7 @@ describe('Executor', () => {
         iterationComplete: false,
       });
 
-      const executor = new Executor(mockConfig);
+      const executor = new Executor(mockConfig, {}, process.cwd(), mockDeps);
       const result = await executor.run('/test/task.md');
 
       expect(result.success).toBe(false);
@@ -301,13 +302,12 @@ describe('Executor', () => {
         completionSignal: '<TASK_COMPLETE>',
       });
 
-      const executor = new Executor(mockConfig, { onIteration });
+      const executor = new Executor(mockConfig, { onIteration }, process.cwd(), mockDeps);
       await executor.run('/test/task.md');
 
       expect(onIteration).toHaveBeenCalledTimes(1);
       const callArg = onIteration.mock.calls[0][0];
       expect(callArg.iteration).toBe(1);
-      // Status should be 'running' when callback is called (before completion check)
       expect(callArg.status).toBe('running');
     });
 
@@ -322,33 +322,20 @@ describe('Executor', () => {
         completionSignal: '<TASK_COMPLETE>',
       });
 
-      const executor = new Executor(mockConfig, { onPhase });
+      const executor = new Executor(mockConfig, { onPhase }, process.cwd(), mockDeps);
       await executor.run('/test/task.md');
 
-      // Should be called for: Starting iteration, Executing AI, Checking scope, Validating
       expect(onPhase).toHaveBeenCalledWith(
-        expect.objectContaining({
-          phase: 'Starting iteration',
-          iteration: 1,
-        })
+        expect.objectContaining({ phase: 'Starting iteration', iteration: 1 })
       );
       expect(onPhase).toHaveBeenCalledWith(
-        expect.objectContaining({
-          phase: 'Executing AI',
-          iteration: 1,
-        })
+        expect.objectContaining({ phase: 'Executing AI', iteration: 1 })
       );
       expect(onPhase).toHaveBeenCalledWith(
-        expect.objectContaining({
-          phase: 'Checking scope',
-          iteration: 1,
-        })
+        expect.objectContaining({ phase: 'Checking scope', iteration: 1 })
       );
       expect(onPhase).toHaveBeenCalledWith(
-        expect.objectContaining({
-          phase: 'Validating',
-          iteration: 1,
-        })
+        expect.objectContaining({ phase: 'Validating', iteration: 1 })
       );
     });
 
@@ -368,14 +355,14 @@ describe('Executor', () => {
           permissions: { ...mockConfig.permissions, scope_enforcement: 'strict' },
           execution: { ...mockConfig.execution, max_consecutive_failures: 1 },
         },
-        { onPhase }
+        { onPhase },
+        process.cwd(),
+        mockDeps
       );
       await executor.run('/test/task.md');
 
       expect(onPhase).toHaveBeenCalledWith(
-        expect.objectContaining({
-          phase: 'Scope violation',
-        })
+        expect.objectContaining({ phase: 'Scope violation' })
       );
     });
 
@@ -390,7 +377,7 @@ describe('Executor', () => {
         completionSignal: '<TASK_COMPLETE>',
       });
 
-      const executor = new Executor(mockConfig, { onOutput });
+      const executor = new Executor(mockConfig, { onOutput }, process.cwd(), mockDeps);
       await executor.run('/test/task.md');
 
       expect(mockProvider.execute).toHaveBeenCalledWith(
@@ -413,7 +400,7 @@ describe('Executor', () => {
         ...mockConfig,
         permissions: { ...mockConfig.permissions, scope_enforcement: 'strict' },
         execution: { ...mockConfig.execution, max_consecutive_failures: 1 },
-      });
+      }, {}, process.cwd(), mockDeps);
       const result = await executor.run('/test/task.md');
 
       expect(result.success).toBe(false);
@@ -426,7 +413,7 @@ describe('Executor', () => {
       mockProvider.execute.mockResolvedValue({
         success: true,
         output: 'Changed file outside scope',
-        filesChanged: ['other/file.ts'], // Not in allowed 'src/**'
+        filesChanged: ['other/file.ts'],
         iterationComplete: false,
       });
 
@@ -436,7 +423,9 @@ describe('Executor', () => {
           permissions: { ...mockConfig.permissions, scope_enforcement: 'ask' },
           execution: { ...mockConfig.execution, max_consecutive_failures: 1 },
         },
-        { onAskUser }
+        { onAskUser },
+        process.cwd(),
+        mockDeps
       );
       const result = await executor.run('/test/task.md');
 
@@ -467,7 +456,9 @@ describe('Executor', () => {
           ...mockConfig,
           permissions: { ...mockConfig.permissions, scope_enforcement: 'ask' },
         },
-        { onAskUser }
+        { onAskUser },
+        process.cwd(),
+        mockDeps
       );
       const result = await executor.run('/test/task.md');
 
@@ -493,7 +484,7 @@ describe('Executor', () => {
           completionSignal: '<TASK_COMPLETE>',
         });
 
-      const executor = new Executor(mockConfig);
+      const executor = new Executor(mockConfig, {}, process.cwd(), mockDeps);
       const result = await executor.run('/test/task.md');
 
       expect(result.iterations).toBe(2);
@@ -508,22 +499,15 @@ describe('Executor', () => {
         completionSignal: '<TASK_COMPLETE>',
       });
 
-      const executor = new Executor(mockConfig);
-
-      // Before run
+      const executor = new Executor(mockConfig, {}, process.cwd(), mockDeps);
       expect(executor.getState().status).toBe('idle');
 
-      const runPromise = executor.run('/test/task.md');
-
-      // After run completes
-      await runPromise;
+      await executor.run('/test/task.md');
       expect(executor.getState().status).toBe('completed');
     });
 
     it('should support pause and resume', () => {
-      const executor = new Executor(mockConfig);
-
-      // Manually set to running for test
+      const executor = new Executor(mockConfig, {}, process.cwd(), mockDeps);
       (executor as unknown as { state: { status: string } }).state.status = 'running';
 
       executor.pause();
@@ -538,7 +522,7 @@ describe('Executor', () => {
     it('should set failed status on error', async () => {
       (loadContext as Mock).mockRejectedValue(new Error('Context load failed'));
 
-      const executor = new Executor(mockConfig);
+      const executor = new Executor(mockConfig, {}, process.cwd(), mockDeps);
       const result = await executor.run('/test/task.md');
 
       expect(result.success).toBe(false);
@@ -555,7 +539,7 @@ describe('Executor', () => {
         completionSignal: '<TASK_COMPLETE>',
       });
 
-      const executor = new Executor(mockConfig);
+      const executor = new Executor(mockConfig, {}, process.cwd(), mockDeps);
       await executor.run('/test/task.md');
 
       const state = executor.getState();
@@ -567,14 +551,8 @@ describe('Executor', () => {
   describe('resume functionality', () => {
     const resumeConfig: AidfConfig = {
       ...mockConfig,
-      execution: {
-        ...mockConfig.execution,
-        max_iterations: 50,
-      },
-      permissions: {
-        ...mockConfig.permissions,
-        auto_commit: true,
-      },
+      execution: { ...mockConfig.execution, max_iterations: 50 },
+      permissions: { ...mockConfig.permissions, auto_commit: true },
     };
 
     const blockedTaskContext: LoadedContext = {
@@ -594,7 +572,7 @@ describe('Executor', () => {
     it('should fail when resuming non-blocked task', async () => {
       (loadContext as Mock).mockResolvedValue(mockContext);
 
-      const executor = new Executor(mockConfig, { resume: true });
+      const executor = new Executor(mockConfig, { resume: true }, process.cwd(), mockDeps);
       const result = await executor.run('/test/task.md');
 
       expect(result.success).toBe(false);
@@ -612,7 +590,7 @@ describe('Executor', () => {
         completionSignal: '<TASK_COMPLETE>',
       });
 
-      const executor = new Executor(resumeConfig, { resume: true });
+      const executor = new Executor(resumeConfig, { resume: true }, process.cwd(), mockDeps);
       await executor.run('/test/task.md');
 
       const state = executor.getState();
@@ -631,13 +609,10 @@ describe('Executor', () => {
         completionSignal: '<TASK_COMPLETE>',
       });
 
-      const executor = new Executor(resumeConfig, { resume: true, dryRun: true });
+      const executor = new Executor(resumeConfig, { resume: true, dryRun: true }, process.cwd(), mockDeps);
       await executor.run('/test/task.md');
 
-      // Verify that buildIterationPrompt was called with blocking context
-      await import('./providers/claude-cli.js');
-      // Note: This is a simplified check - in a real test you'd spy on buildIterationPrompt
-      expect(mockProvider.execute).not.toHaveBeenCalled(); // Dry run doesn't execute
+      expect(mockProvider.execute).not.toHaveBeenCalled();
     });
 
     it('should restore previous files modified when resuming', async () => {
@@ -650,10 +625,9 @@ describe('Executor', () => {
         completionSignal: '<TASK_COMPLETE>',
       });
 
-      const executor = new Executor(resumeConfig, { resume: true });
+      const executor = new Executor(resumeConfig, { resume: true }, process.cwd(), mockDeps);
       const result = await executor.run('/test/task.md');
 
-      // Should include both previous and new files
       expect(result.filesModified.length).toBeGreaterThanOrEqual(3);
       expect(result.filesModified).toContain('src/api/client.ts');
       expect(result.filesModified).toContain('src/config/settings.ts');
@@ -670,7 +644,7 @@ describe('Executor', () => {
         completionSignal: '<TASK_COMPLETE>',
       });
 
-      const executor = new Executor(mockConfig);
+      const executor = new Executor(mockConfig, {}, process.cwd(), mockDeps);
       await executor.run('/test/task.md');
 
       expect(mockProvider.execute).toHaveBeenCalledWith(
@@ -691,7 +665,7 @@ describe('Executor', () => {
       const executor = new Executor({
         ...mockConfig,
         security: { skip_permissions: true },
-      });
+      }, {}, process.cwd(), mockDeps);
       await executor.run('/test/task.md');
 
       expect(mockProvider.execute).toHaveBeenCalledWith(
@@ -712,7 +686,7 @@ describe('Executor', () => {
       const executor = new Executor({
         ...mockConfig,
         security: { skip_permissions: false },
-      });
+      }, {}, process.cwd(), mockDeps);
       await executor.run('/test/task.md');
 
       expect(mockProvider.execute).toHaveBeenCalledWith(
@@ -733,8 +707,7 @@ describe('Executor', () => {
       const executor = new Executor({
         ...mockConfig,
         security: { skip_permissions: true, warn_on_skip: true },
-      });
-      // Spy on the logger's warn method
+      }, {}, process.cwd(), mockDeps);
       const loggerSpy = vi.spyOn(
         (executor as unknown as { logger: { warn: (msg: string) => void } }).logger,
         'warn'
@@ -756,7 +729,7 @@ describe('Executor', () => {
         completionSignal: '<TASK_COMPLETE>',
       });
 
-      const executor = new Executor(mockConfig);
+      const executor = new Executor(mockConfig, {}, process.cwd(), mockDeps);
       const loggerSpy = vi.spyOn(
         (executor as unknown as { logger: { warn: (msg: string) => void } }).logger,
         'warn'
@@ -781,7 +754,7 @@ describe('Executor', () => {
       const executor = new Executor({
         ...mockConfig,
         security: { skip_permissions: true, warn_on_skip: false },
-      });
+      }, {}, process.cwd(), mockDeps);
       const loggerSpy = vi.spyOn(
         (executor as unknown as { logger: { warn: (msg: string) => void } }).logger,
         'warn'
@@ -806,7 +779,7 @@ describe('Executor', () => {
       const executor = new Executor({
         ...mockConfig,
         security: { skip_permissions: false, warn_on_skip: true },
-      });
+      }, {}, process.cwd(), mockDeps);
       const loggerSpy = vi.spyOn(
         (executor as unknown as { logger: { warn: (msg: string) => void } }).logger,
         'warn'
@@ -830,7 +803,7 @@ describe('Executor', () => {
         completionSignal: '<TASK_COMPLETE>',
       });
 
-      const executor = new Executor(mockConfig);
+      const executor = new Executor(mockConfig, {}, process.cwd(), mockDeps);
       await executor.run('/test/task.md');
 
       expect(moveTaskFile).toHaveBeenCalledWith('/test/task.md', 'completed');
@@ -845,7 +818,7 @@ describe('Executor', () => {
         iterationComplete: false,
       });
 
-      const executor = new Executor(mockConfig);
+      const executor = new Executor(mockConfig, {}, process.cwd(), mockDeps);
       await executor.run('/test/task.md');
 
       expect(moveTaskFile).toHaveBeenCalledWith('/test/task.md', 'blocked');
@@ -862,7 +835,7 @@ describe('Executor', () => {
       const executor = new Executor({
         ...mockConfig,
         execution: { ...mockConfig.execution, max_iterations: 2 },
-      });
+      }, {}, process.cwd(), mockDeps);
       await executor.run('/test/task.md');
 
       expect(moveTaskFile).toHaveBeenCalledWith('/test/task.md', 'blocked');
@@ -881,7 +854,7 @@ describe('Executor', () => {
         completionSignal: '<TASK_COMPLETE>',
       });
 
-      const executor = new Executor(mockConfig);
+      const executor = new Executor(mockConfig, {}, process.cwd(), mockDeps);
       const result = await executor.run('/test/task.md');
 
       expect(result.success).toBe(true);
@@ -899,11 +872,10 @@ describe('Executor', () => {
         completionSignal: '<TASK_COMPLETE>',
       });
 
-      const executor = new Executor(mockConfig);
+      const executor = new Executor(mockConfig, {}, process.cwd(), mockDeps);
       await executor.run('/test/task.md');
 
-      const mockGit = (simpleGit as unknown as Mock).mock.results[0].value;
-      // Should have staged the task file (git add)
+      const mockGit = mockDeps.git as unknown as { add: Mock };
       expect(mockGit.add).toHaveBeenCalledWith(['/test/task.md']);
     });
 
@@ -919,13 +891,11 @@ describe('Executor', () => {
         completionSignal: '<TASK_COMPLETE>',
       });
 
-      const executor = new Executor(mockConfig);
+      const executor = new Executor(mockConfig, {}, process.cwd(), mockDeps);
       await executor.run('/test/task.md');
 
-      const mockGit = (simpleGit as unknown as Mock).mock.results[0].value;
-      // Should stage the new file location
+      const mockGit = mockDeps.git as unknown as { add: Mock; raw: Mock };
       expect(mockGit.add).toHaveBeenCalledWith([newPath]);
-      // Should remove the old path from git index
       expect(mockGit.raw).toHaveBeenCalledWith(['rm', '--cached', '--ignore-unmatch', '/test/task.md']);
     });
 
@@ -940,11 +910,10 @@ describe('Executor', () => {
         iterationComplete: false,
       });
 
-      const executor = new Executor(mockConfig);
+      const executor = new Executor(mockConfig, {}, process.cwd(), mockDeps);
       await executor.run('/test/task.md');
 
-      const mockGit = (simpleGit as unknown as Mock).mock.results[0].value;
-      // Should have staged the task file
+      const mockGit = mockDeps.git as unknown as { add: Mock };
       expect(mockGit.add).toHaveBeenCalledWith(['/test/task.md']);
     });
 
@@ -960,13 +929,13 @@ describe('Executor', () => {
         completionSignal: '<TASK_COMPLETE>',
       });
 
-      // Create executor first so simpleGit is called
-      const executor = new Executor(mockConfig);
+      const mockGit = createMockGit();
+      (mockGit.add as Mock).mockRejectedValueOnce(new Error('git add failed'));
 
-      // Now access the git mock and make add throw
-      const mockGit = (simpleGit as unknown as Mock).mock.results.at(-1)!.value;
-      mockGit.add.mockRejectedValueOnce(new Error('git add failed'));
-
+      const executor = new Executor(mockConfig, {}, process.cwd(), {
+        ...mockDeps,
+        git: mockGit,
+      });
       const result = await executor.run('/test/task.md');
 
       expect(result.success).toBe(true);
@@ -999,7 +968,7 @@ describe('Executor', () => {
         completionSignal: '<TASK_COMPLETE>',
       });
 
-      const executor = new Executor(mockConfig);
+      const executor = new Executor(mockConfig, {}, process.cwd(), mockDeps);
       const result = await executor.run('/test/task.md');
 
       expect(result.success).toBe(true);
@@ -1008,8 +977,18 @@ describe('Executor', () => {
     });
 
     it('should NOT complete when completion signal + validation fails', async () => {
-      // First iteration: AI signals completion but validation fails
-      mockPreCommit.mockResolvedValueOnce(failedValidation);
+      const mockValidator = vi.fn().mockResolvedValueOnce(failedValidation).mockResolvedValue({
+        phase: 'pre_commit',
+        passed: true,
+        results: [],
+        totalDuration: 0,
+      });
+
+      const depsWithFailingValidator = {
+        ...mockDeps,
+        createValidator: vi.fn(() => ({ preCommit: mockValidator })) as unknown as ExecutorDependencies['createValidator'],
+      };
+
       mockProvider.execute
         .mockResolvedValueOnce({
           success: true,
@@ -1018,7 +997,6 @@ describe('Executor', () => {
           iterationComplete: true,
           completionSignal: '<TASK_COMPLETE>',
         })
-        // Second iteration: AI fixes and re-signals, validation passes
         .mockResolvedValueOnce({
           success: true,
           output: '<TASK_COMPLETE>',
@@ -1027,18 +1005,27 @@ describe('Executor', () => {
           completionSignal: '<TASK_COMPLETE>',
         });
 
-      const executor = new Executor(mockConfig);
+      const executor = new Executor(mockConfig, {}, process.cwd(), depsWithFailingValidator);
       const result = await executor.run('/test/task.md');
 
-      // Should complete on second iteration (after AI fixes the issue)
       expect(result.success).toBe(true);
       expect(result.status).toBe('completed');
       expect(result.iterations).toBe(2);
     });
 
     it('should include validation error in next iteration prompt', async () => {
-      // First iteration: completion signal + validation fails
-      mockPreCommit.mockResolvedValueOnce(failedValidation);
+      const mockValidator = vi.fn().mockResolvedValueOnce(failedValidation).mockResolvedValue({
+        phase: 'pre_commit',
+        passed: true,
+        results: [],
+        totalDuration: 0,
+      });
+
+      const depsWithFailingValidator = {
+        ...mockDeps,
+        createValidator: vi.fn(() => ({ preCommit: mockValidator })) as unknown as ExecutorDependencies['createValidator'],
+      };
+
       mockProvider.execute
         .mockResolvedValueOnce({
           success: true,
@@ -1047,7 +1034,6 @@ describe('Executor', () => {
           iterationComplete: true,
           completionSignal: '<TASK_COMPLETE>',
         })
-        // Second iteration: completes successfully
         .mockResolvedValueOnce({
           success: true,
           output: '<TASK_COMPLETE>',
@@ -1056,10 +1042,9 @@ describe('Executor', () => {
           completionSignal: '<TASK_COMPLETE>',
         });
 
-      const executor = new Executor(mockConfig);
+      const executor = new Executor(mockConfig, {}, process.cwd(), depsWithFailingValidator);
       await executor.run('/test/task.md');
 
-      // Iteration 1 uses buildIterationPrompt, iteration 2 uses buildContinuationPrompt
       expect(buildIterationPrompt).toHaveBeenCalledTimes(1);
       expect(buildContinuationPrompt).toHaveBeenCalledTimes(1);
       const continuationArgs = (buildContinuationPrompt as Mock).mock.calls[0][0];
@@ -1068,8 +1053,18 @@ describe('Executor', () => {
     });
 
     it('should NOT include validation error in prompt when no completion signal', async () => {
-      // Validation fails without completion signal — existing behavior
-      mockPreCommit.mockResolvedValueOnce(failedValidation);
+      const mockValidator = vi.fn().mockResolvedValueOnce(failedValidation).mockResolvedValue({
+        phase: 'pre_commit',
+        passed: true,
+        results: [],
+        totalDuration: 0,
+      });
+
+      const depsWithFailingValidator = {
+        ...mockDeps,
+        createValidator: vi.fn(() => ({ preCommit: mockValidator })) as unknown as ExecutorDependencies['createValidator'],
+      };
+
       mockProvider.execute
         .mockResolvedValueOnce({
           success: true,
@@ -1085,20 +1080,29 @@ describe('Executor', () => {
           completionSignal: '<TASK_COMPLETE>',
         });
 
-      const executor = new Executor(mockConfig);
+      const executor = new Executor(mockConfig, {}, process.cwd(), depsWithFailingValidator);
       await executor.run('/test/task.md');
 
-      // Iteration 2 uses continuation prompt — should NOT have previousValidationError
       expect(buildContinuationPrompt).toHaveBeenCalledTimes(1);
       const continuationArgs = (buildContinuationPrompt as Mock).mock.calls[0][0];
       expect(continuationArgs.previousValidationError).toBeUndefined();
     });
 
     it('should clear validation error after successful validation', async () => {
-      // Iteration 1: signal + validation fails
-      mockPreCommit.mockResolvedValueOnce(failedValidation);
-      // Iteration 2: no signal, validation passes
-      // Iteration 3: signal + validation passes
+      const mockValidator = vi.fn()
+        .mockResolvedValueOnce(failedValidation)
+        .mockResolvedValue({
+          phase: 'pre_commit',
+          passed: true,
+          results: [],
+          totalDuration: 0,
+        });
+
+      const depsWithFailingValidator = {
+        ...mockDeps,
+        createValidator: vi.fn(() => ({ preCommit: mockValidator })) as unknown as ExecutorDependencies['createValidator'],
+      };
+
       mockProvider.execute
         .mockResolvedValueOnce({
           success: true,
@@ -1121,30 +1125,29 @@ describe('Executor', () => {
           completionSignal: '<TASK_COMPLETE>',
         });
 
-      const executor = new Executor(mockConfig);
+      const executor = new Executor(mockConfig, {}, process.cwd(), depsWithFailingValidator);
       await executor.run('/test/task.md');
 
-      // Iteration 1: buildIterationPrompt, iterations 2-3: buildContinuationPrompt
       expect(buildIterationPrompt).toHaveBeenCalledTimes(1);
       expect(buildContinuationPrompt).toHaveBeenCalledTimes(2);
-      // 2nd iteration (continuation call 0) should have validation error
       expect((buildContinuationPrompt as Mock).mock.calls[0][0].previousValidationError).toBeDefined();
-      // 3rd iteration (continuation call 1) should NOT have validation error (cleared after successful validation)
       expect((buildContinuationPrompt as Mock).mock.calls[1][0].previousValidationError).toBeUndefined();
     });
 
     it('should not lose completion signal when validation fails (regression test)', async () => {
-      // This is the exact bug scenario: AI emits TASK_COMPLETE, validation fails,
-      // next iteration AI doesn't re-emit, resulting in false BLOCKED.
-      // With the fix, the validation error is passed so AI knows to re-emit.
-      mockPreCommit
-        .mockResolvedValueOnce(failedValidation) // iter 1: validation fails
-        .mockResolvedValue({ // iter 2+: validation passes
+      const mockValidator = vi.fn()
+        .mockResolvedValueOnce(failedValidation)
+        .mockResolvedValue({
           phase: 'pre_commit',
           passed: true,
           results: [],
           totalDuration: 0,
         });
+
+      const depsWithFailingValidator = {
+        ...mockDeps,
+        createValidator: vi.fn(() => ({ preCommit: mockValidator })) as unknown as ExecutorDependencies['createValidator'],
+      };
 
       mockProvider.execute
         .mockResolvedValueOnce({
@@ -1162,10 +1165,9 @@ describe('Executor', () => {
           completionSignal: '<TASK_COMPLETE>',
         });
 
-      const executor = new Executor(mockConfig);
+      const executor = new Executor(mockConfig, {}, process.cwd(), depsWithFailingValidator);
       const result = await executor.run('/test/task.md');
 
-      // Should complete on iteration 2, NOT be blocked
       expect(result.success).toBe(true);
       expect(result.status).toBe('completed');
       expect(result.iterations).toBe(2);
@@ -1175,7 +1177,6 @@ describe('Executor', () => {
 
   describe('completion signal + scope violation interaction', () => {
     it('should accept completion despite scope violation when signal detected', async () => {
-      // AI completes the task but also touches a forbidden file
       mockProvider.execute.mockResolvedValue({
         success: true,
         output: '<TASK_COMPLETE>',
@@ -1184,17 +1185,15 @@ describe('Executor', () => {
         completionSignal: '<TASK_COMPLETE>',
       });
 
-      const executor = new Executor(mockConfig);
+      const executor = new Executor(mockConfig, {}, process.cwd(), mockDeps);
       const result = await executor.run('/test/task.md');
 
-      // Should complete, not fail — the forbidden files get reverted
       expect(result.success).toBe(true);
       expect(result.status).toBe('completed');
       expect(result.iterations).toBe(1);
     });
 
     it('should still fail on scope violation when no completion signal', async () => {
-      // AI modifies forbidden files without signaling completion
       mockProvider.execute.mockResolvedValue({
         success: true,
         output: 'Working on it',
@@ -1205,7 +1204,7 @@ describe('Executor', () => {
       const executor = new Executor({
         ...mockConfig,
         execution: { ...mockConfig.execution, max_consecutive_failures: 2 },
-      });
+      }, {}, process.cwd(), mockDeps);
       const result = await executor.run('/test/task.md');
 
       expect(result.success).toBe(false);
@@ -1223,7 +1222,7 @@ describe('Executor', () => {
         completionSignal: '<TASK_COMPLETE>',
       });
 
-      const executor = new Executor(mockConfig);
+      const executor = new Executor(mockConfig, {}, process.cwd(), mockDeps);
       const result = await executor.run('/test/task.md');
 
       expect(result.tokenUsage).toBeDefined();
@@ -1252,7 +1251,7 @@ describe('Executor', () => {
           tokenUsage: { inputTokens: 1500, outputTokens: 300 },
         });
 
-      const executor = new Executor(mockConfig);
+      const executor = new Executor(mockConfig, {}, process.cwd(), mockDeps);
       const result = await executor.run('/test/task.md');
 
       expect(result.tokenUsage).toBeDefined();
@@ -1271,12 +1270,11 @@ describe('Executor', () => {
         tokenUsage: { inputTokens: 1_000_000, outputTokens: 100_000 },
       });
 
-      const executor = new Executor(mockConfig);
+      const executor = new Executor(mockConfig, {}, process.cwd(), mockDeps);
       const result = await executor.run('/test/task.md');
 
       expect(result.tokenUsage).toBeDefined();
       expect(result.tokenUsage!.estimatedCost).toBeDefined();
-      // $3/MTok input + $15/MTok output = $3 + $1.5 = $4.5
       expect(result.tokenUsage!.estimatedCost).toBeCloseTo(4.5, 1);
     });
 
@@ -1287,10 +1285,9 @@ describe('Executor', () => {
         filesChanged: [],
         iterationComplete: true,
         completionSignal: '<TASK_COMPLETE>',
-        // No tokenUsage (CLI provider)
       });
 
-      const executor = new Executor(mockConfig);
+      const executor = new Executor(mockConfig, {}, process.cwd(), mockDeps);
       const result = await executor.run('/test/task.md');
 
       expect(result.tokenUsage).toBeDefined();
@@ -1308,7 +1305,7 @@ describe('Executor', () => {
         completionSignal: '<TASK_COMPLETE>',
       });
 
-      const executor = new Executor(mockConfig);
+      const executor = new Executor(mockConfig, {}, process.cwd(), mockDeps);
       const loggerSpy = vi.spyOn(
         (executor as unknown as { logger: { info: (msg: string) => void } }).logger,
         'info'
@@ -1337,7 +1334,7 @@ describe('Executor', () => {
         tokenUsage: { inputTokens: 5000, outputTokens: 1000 },
       });
 
-      const executor = new Executor(mockConfig);
+      const executor = new Executor(mockConfig, {}, process.cwd(), mockDeps);
       const loggerSpy = vi.spyOn(
         (executor as unknown as { logger: { info: (msg: string) => void } }).logger,
         'info'
@@ -1360,7 +1357,7 @@ describe('Executor', () => {
         completionSignal: '<TASK_COMPLETE>',
       });
 
-      const executor = new Executor(mockConfig);
+      const executor = new Executor(mockConfig, {}, process.cwd(), mockDeps);
       const boxSpy = vi.spyOn(
         (executor as unknown as { logger: { box: (title: string, content: string) => void } }).logger,
         'box'
@@ -1383,7 +1380,7 @@ describe('Executor', () => {
         iterationComplete: false,
       });
 
-      const executor = new Executor(mockConfig);
+      const executor = new Executor(mockConfig, {}, process.cwd(), mockDeps);
       const boxSpy = vi.spyOn(
         (executor as unknown as { logger: { box: (title: string, content: string) => void } }).logger,
         'box'
@@ -1408,14 +1405,11 @@ describe('Executor', () => {
         completionSignal: '<TASK_COMPLETE>',
       });
 
-      const executor = new Executor(mockConfig);
+      const executor = new Executor(mockConfig, {}, process.cwd(), mockDeps);
       await executor.run('/test/task.md');
 
-      // First iteration should use full prompt
       expect(buildIterationPrompt).toHaveBeenCalledTimes(1);
       expect(buildContinuationPrompt).not.toHaveBeenCalled();
-
-      // Should NOT pass sessionContinuation on first iteration
       expect(mockProvider.execute).toHaveBeenCalledWith(
         expect.any(String),
         expect.objectContaining({ sessionContinuation: false })
@@ -1439,14 +1433,12 @@ describe('Executor', () => {
           completionSignal: '<TASK_COMPLETE>',
         });
 
-      const executor = new Executor(mockConfig);
+      const executor = new Executor(mockConfig, {}, process.cwd(), mockDeps);
       await executor.run('/test/task.md');
 
-      // First iteration: full prompt, second: continuation
       expect(buildIterationPrompt).toHaveBeenCalledTimes(1);
       expect(buildContinuationPrompt).toHaveBeenCalledTimes(1);
 
-      // Second call should have sessionContinuation: true
       const secondCallOptions = mockProvider.execute.mock.calls[1][1];
       expect(secondCallOptions.sessionContinuation).toBe(true);
     });
@@ -1470,23 +1462,20 @@ describe('Executor', () => {
           completionSignal: '<TASK_COMPLETE>',
         });
 
-      const executor = new Executor(mockConfig);
+      const executor = new Executor(mockConfig, {}, process.cwd(), mockDeps);
       await executor.run('/test/task.md');
 
-      // Second call should pass the conversationState from first iteration
       const secondCallOptions = mockProvider.execute.mock.calls[1][1];
       expect(secondCallOptions.conversationState).toEqual(mockState);
     });
 
     it('should use sentinel true when provider does not return conversationState', async () => {
-      // CLI providers don't return conversationState — executor uses `true` as sentinel
       mockProvider.execute
         .mockResolvedValueOnce({
           success: true,
           output: 'Working...',
           filesChanged: [],
           iterationComplete: false,
-          // No conversationState returned
         })
         .mockResolvedValueOnce({
           success: true,
@@ -1496,10 +1485,9 @@ describe('Executor', () => {
           completionSignal: '<TASK_COMPLETE>',
         });
 
-      const executor = new Executor(mockConfig);
+      const executor = new Executor(mockConfig, {}, process.cwd(), mockDeps);
       await executor.run('/test/task.md');
 
-      // Second call should still use continuation (sentinel `true` means conversation exists)
       expect(buildContinuationPrompt).toHaveBeenCalledTimes(1);
       const secondCallOptions = mockProvider.execute.mock.calls[1][1];
       expect(secondCallOptions.sessionContinuation).toBe(true);
@@ -1525,21 +1513,18 @@ describe('Executor', () => {
       const executor = new Executor({
         ...mockConfig,
         execution: { ...mockConfig.execution, session_continuation: false },
-      });
+      }, {}, process.cwd(), mockDeps);
       await executor.run('/test/task.md');
 
-      // Both iterations should use full prompt
       expect(buildIterationPrompt).toHaveBeenCalledTimes(2);
       expect(buildContinuationPrompt).not.toHaveBeenCalled();
 
-      // Second call should NOT have sessionContinuation
       const secondCallOptions = mockProvider.execute.mock.calls[1][1];
       expect(secondCallOptions.sessionContinuation).toBe(false);
     });
 
     it('should fallback to full prompt when continuation fails', async () => {
       mockProvider.execute
-        // Iteration 1: succeeds
         .mockResolvedValueOnce({
           success: true,
           output: 'Working...',
@@ -1547,7 +1532,6 @@ describe('Executor', () => {
           iterationComplete: false,
           conversationState: [{ role: 'user', content: 'state' }],
         })
-        // Iteration 2: continuation fails
         .mockResolvedValueOnce({
           success: false,
           output: '',
@@ -1555,7 +1539,6 @@ describe('Executor', () => {
           filesChanged: [],
           iterationComplete: false,
         })
-        // Iteration 2: fallback with full prompt succeeds
         .mockResolvedValueOnce({
           success: true,
           output: 'Done after fallback',
@@ -1564,14 +1547,11 @@ describe('Executor', () => {
           completionSignal: '<TASK_COMPLETE>',
         });
 
-      const executor = new Executor(mockConfig);
+      const executor = new Executor(mockConfig, {}, process.cwd(), mockDeps);
       const result = await executor.run('/test/task.md');
 
-      // Should have used continuation, then fallback
       expect(buildContinuationPrompt).toHaveBeenCalledTimes(1);
-      // Fallback calls buildIterationPrompt again
       expect(buildIterationPrompt).toHaveBeenCalledTimes(2);
-      // 3 total provider.execute calls: initial + continuation fail + fallback
       expect(mockProvider.execute).toHaveBeenCalledTimes(3);
       expect(result.success).toBe(true);
     });
@@ -1579,7 +1559,6 @@ describe('Executor', () => {
 
   describe('timeout enforcement', () => {
     it('should timeout iteration when provider takes too long', async () => {
-      // Provider hangs indefinitely — timeout at 0.1s will fire first
       mockProvider.execute.mockImplementation(
         () => new Promise(() => {/* never resolves */})
       );
@@ -1588,10 +1567,10 @@ describe('Executor', () => {
         ...mockConfig,
         execution: {
           ...mockConfig.execution,
-          timeout_per_iteration: 0.1, // 100ms
+          timeout_per_iteration: 0.1,
           max_consecutive_failures: 1,
         },
-      });
+      }, {}, process.cwd(), mockDeps);
 
       const result = await executor.run('/test/task.md');
 
@@ -1611,11 +1590,8 @@ describe('Executor', () => {
 
       const executor = new Executor({
         ...mockConfig,
-        execution: {
-          ...mockConfig.execution,
-          timeout_per_iteration: 300, // 5 minutes
-        },
-      });
+        execution: { ...mockConfig.execution, timeout_per_iteration: 300 },
+      }, {}, process.cwd(), mockDeps);
 
       const result = await executor.run('/test/task.md');
       expect(result.success).toBe(true);
@@ -1623,8 +1599,6 @@ describe('Executor', () => {
     });
 
     it('should increment failure count on timeout and continue to next iteration', async () => {
-      // First iteration: times out
-      // Second iteration: completes
       let callCount = 0;
       mockProvider.execute.mockImplementation(() => {
         callCount++;
@@ -1644,10 +1618,10 @@ describe('Executor', () => {
         ...mockConfig,
         execution: {
           ...mockConfig.execution,
-          timeout_per_iteration: 0.1, // 100ms
+          timeout_per_iteration: 0.1,
           max_consecutive_failures: 3,
         },
-      });
+      }, {}, process.cwd(), mockDeps);
 
       const result = await executor.run('/test/task.md');
 
@@ -1666,11 +1640,8 @@ describe('Executor', () => {
 
       const executor = new Executor({
         ...mockConfig,
-        execution: {
-          ...mockConfig.execution,
-          timeout_per_iteration: 0,
-        },
-      });
+        execution: { ...mockConfig.execution, timeout_per_iteration: 0 },
+      }, {}, process.cwd(), mockDeps);
 
       const result = await executor.run('/test/task.md');
       expect(result.success).toBe(true);
@@ -1688,7 +1659,7 @@ describe('Executor', () => {
           timeout_per_iteration: 0.1,
           max_consecutive_failures: 1,
         },
-      });
+      }, {}, process.cwd(), mockDeps);
 
       const loggerSpy = vi.spyOn(
         (executor as unknown as { logger: { warn: (msg: string) => void } }).logger,
@@ -1703,6 +1674,23 @@ describe('Executor', () => {
     }, 10_000);
   });
 });
+
+// Mock createProvider at module level for executeTask tests
+vi.mock('./providers/index.js', () => ({
+  createProvider: vi.fn(() => ({
+    name: 'mock-provider',
+    execute: vi.fn().mockResolvedValue({
+      success: true,
+      output: 'Done',
+      filesChanged: [],
+      iterationComplete: true,
+      completionSignal: '<TASK_COMPLETE>',
+    }),
+    isAvailable: vi.fn().mockResolvedValue(true),
+  })),
+}));
+
+import { createProvider } from './providers/index.js';
 
 describe('executeTask', () => {
   beforeEach(() => {
@@ -1732,7 +1720,6 @@ describe('executeTask', () => {
   });
 
   it('should create executor and run task', async () => {
-    // Mock fs for config file check
     vi.mock('fs', async () => {
       const actual = await vi.importActual('fs');
       return {
