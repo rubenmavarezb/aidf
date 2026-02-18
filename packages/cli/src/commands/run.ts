@@ -10,7 +10,7 @@ import { executeTask } from '../core/executor.js';
 import { ParallelExecutor } from '../core/parallel-executor.js';
 import { ContextLoader } from '../core/context-loader.js';
 import { Logger } from '../utils/logger.js';
-import { LiveStatus } from '../utils/live-status.js';
+import { LiveStatus, extractTaskLabel } from '../utils/live-status.js';
 import type { ExecutorResult, ExecutorState, PhaseEvent } from '../types/index.js';
 
 export function createRunCommand(): Command {
@@ -119,7 +119,8 @@ export function createRunCommand(): Command {
         // Ejecutar
         logger.setContext({ task: taskPath, command: 'run' });
         const maxIterations = options.maxIterations || 50;
-        const liveStatus = new LiveStatus(maxIterations, options.quiet);
+        const taskLabel = extractTaskLabel(taskPath);
+        const liveStatus = new LiveStatus(maxIterations, options.quiet, taskLabel);
         liveStatus.start();
 
         const result = await executeTask(taskPath, {

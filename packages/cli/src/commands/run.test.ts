@@ -60,6 +60,7 @@ vi.mock('../utils/live-status.js', () => ({
     iterationEnd: vi.fn(),
     complete: vi.fn(),
   })),
+  extractTaskLabel: vi.fn().mockReturnValue('Task 001'),
 }));
 
 // Mock logger
