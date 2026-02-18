@@ -31,7 +31,13 @@ packages/
       │   ├── types/index.ts     # All TypeScript interfaces
       │   ├── commands/          # init, run, task, status, watch, hooks, skills
       │   ├── core/
-      │   │   ├── executor.ts          # Main execution loop
+      │   │   ├── executor.ts          # Executor class (delegates to phases)
+      │   │   ├── phases/
+      │   │   │   ├── types.ts         # PhaseContext, PreFlightResult, ExecutionLoopResult
+      │   │   │   ├── preflight.ts     # PreFlightPhase (config, context, scope, validator)
+      │   │   │   ├── execution.ts     # ExecutionPhase (iteration loop)
+      │   │   │   ├── postflight.ts    # PostFlightPhase (status, file movement, notifications)
+      │   │   │   └── index.ts         # Barrel exports
       │   │   ├── parallel-executor.ts # Multi-task parallel execution
       │   │   ├── context-loader.ts    # Loads .ai/ folder context
       │   │   ├── skill-loader.ts       # Agent Skills discovery, parsing, XML generation
@@ -89,18 +95,18 @@ npm run lint           # eslint src
 ### Execution Flow
 
 ```
-aidf run → load context (AGENTS.md + role + task + skills) → build prompt → provider.execute() →
-  → check scope (ScopeGuard) → validate (lint/typecheck/test) → commit → repeat until done
+aidf run → PreFlightPhase (config, context, scope, validator) →
+  ExecutionPhase (iteration loop: prompt → provider → scope → validate → commit) →
+  PostFlightPhase (status update, file movement, push, notifications, summary)
 ```
 
-The executor (`core/executor.ts`) is the central loop. Each iteration:
-1. Builds a prompt with full context via `buildIterationPrompt()` (in `claude-cli.ts`)
-2. Calls the provider's `execute()` method
-3. Checks file changes against scope rules (strict/ask/permissive)
-4. Runs validation commands (pre_commit hooks from config.yml)
-5. Auto-commits if enabled
-6. Detects completion signals (`<TASK_COMPLETE>`, `<DONE>`, etc.) or blocked signals
-7. Updates the task .md file with status (COMPLETED/BLOCKED/FAILED)
+The executor (`core/executor.ts`) delegates to three phase classes:
+
+1. **PreFlightPhase** (`phases/preflight.ts`): Config resolution, secret detection, context loading, resume state restoration, security warnings, ScopeGuard/Validator creation
+2. **ExecutionPhase** (`phases/execution.ts`): The iteration loop — builds prompts, calls provider, checks scope, validates, commits, detects completion/blocked signals
+3. **PostFlightPhase** (`phases/postflight.ts`): Status file updates, task file movement, git staging, auto-push, token usage summary, notifications
+
+The `Executor` constructor accepts optional `ExecutorDependencies` for dependency injection, enabling isolated unit testing without `vi.mock()`.
 
 ### Providers
 

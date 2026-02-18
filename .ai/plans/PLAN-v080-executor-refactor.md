@@ -1,6 +1,6 @@
 # PLAN: v0.8.0 — Executor Refactoring
 
-## Status: DRAFT
+## Status: COMPLETED
 
 ## Overview
 
@@ -29,7 +29,7 @@ This plan refactors the Executor into three well-defined phases (PreFlight, Exec
 
 ### Phase 1: Define interfaces and dependency injection
 
-- [ ] `080-executor-dependencies-interface.md` — Define the `ExecutorDependencies` interface and refactor the `Executor` constructor to accept injected dependencies.
+- [x] `080-executor-dependencies-interface.md` — Define the `ExecutorDependencies` interface and refactor the `Executor` constructor to accept injected dependencies.
 
   **Files to modify:**
   - `packages/cli/src/types/index.ts` — Add the `ExecutorDependencies` interface:
@@ -58,7 +58,7 @@ This plan refactors the Executor into three well-defined phases (PreFlight, Exec
   - Add test: verify that when `deps` is omitted, default dependencies are created (backward compatibility)
   - Existing tests must continue to pass without modification (the `deps` parameter is optional)
 
-- [ ] `081-executor-phase-interfaces.md` — Define the phase interfaces and shared context type that phases will use to communicate.
+- [x] `081-executor-phase-interfaces.md` — Define the phase interfaces and shared context type that phases will use to communicate.
 
   **Files to create:**
   - `packages/cli/src/core/phases/types.ts` — Define:
@@ -106,7 +106,7 @@ This plan refactors the Executor into three well-defined phases (PreFlight, Exec
 
 ### Phase 2: Extract phases from executor
 
-- [ ] `082-preflight-phase.md` — Extract the PreFlight logic from `Executor.run()` into a `PreFlightPhase` class.
+- [x] `082-preflight-phase.md` — Extract the PreFlight logic from `Executor.run()` into a `PreFlightPhase` class.
 
   **Files to create:**
   - `packages/cli/src/core/phases/preflight.ts` — Implement `PreFlightPhase` class that implements `ExecutorPhase<void, PreFlightResult>`. Extract the following logic from `Executor.run()` (lines 91-198 of the current file):
@@ -142,7 +142,7 @@ This plan refactors the Executor into three well-defined phases (PreFlight, Exec
     - Test: Validator created with correct config and cwd
     All tests should inject mock dependencies via `PhaseContext.deps` instead of using `vi.mock()`
 
-- [ ] `083-execution-phase.md` — Extract the iteration loop from `Executor.run()` into an `ExecutionPhase` class.
+- [x] `083-execution-phase.md` — Extract the iteration loop from `Executor.run()` into an `ExecutionPhase` class.
 
   **Files to create:**
   - `packages/cli/src/core/phases/execution.ts` — Implement `ExecutionPhase` class that implements `ExecutorPhase<PreFlightResult, ExecutionLoopResult>`. Extract the following logic from `Executor.run()` (lines 201-448):
@@ -199,7 +199,7 @@ This plan refactors the Executor into three well-defined phases (PreFlight, Exec
     - Test: accepts completion despite scope violation when signal detected
     All tests should use injected mock dependencies
 
-- [ ] `084-postflight-phase.md` — Extract the PostFlight logic from `Executor.run()` into a `PostFlightPhase` class.
+- [x] `084-postflight-phase.md` — Extract the PostFlight logic from `Executor.run()` into a `PostFlightPhase` class.
 
   **Files to create:**
   - `packages/cli/src/core/phases/postflight.ts` — Implement `PostFlightPhase` class that implements `ExecutorPhase<PostFlightInput, ExecutorResult>`. Extract the following logic from `Executor.run()` (lines 451-587):
@@ -247,7 +247,7 @@ This plan refactors the Executor into three well-defined phases (PreFlight, Exec
 
 ### Phase 3: Rewire executor and migrate tests
 
-- [ ] `085-rewire-executor.md` — Rewire `Executor.run()` to delegate to the three phase classes, replacing the inlined logic.
+- [x] `085-rewire-executor.md` — Rewire `Executor.run()` to delegate to the three phase classes, replacing the inlined logic.
 
   **Files to modify:**
   - `packages/cli/src/core/executor.ts` — The new `run()` method should be approximately:
@@ -318,7 +318,7 @@ This plan refactors the Executor into three well-defined phases (PreFlight, Exec
   - All existing tests in `executor.test.ts` must continue to pass without modification
   - Run the full test suite (`pnpm test`) to verify no regressions
 
-- [ ] `086-migrate-executor-tests.md` — Refactor `executor.test.ts` to use dependency injection instead of module-level `vi.mock()` calls, improving test clarity and reliability.
+- [x] `086-migrate-executor-tests.md` — Refactor `executor.test.ts` to use dependency injection instead of module-level `vi.mock()` calls, improving test clarity and reliability.
 
   **Files to modify:**
   - `packages/cli/src/core/executor.test.ts` — Refactor approach:
@@ -348,7 +348,7 @@ This plan refactors the Executor into three well-defined phases (PreFlight, Exec
   - Run `pnpm test -- --coverage` to verify coverage is maintained or improved
   - Verify no `vi.mock()` calls remain in executor.test.ts (except for `fs` if needed for the `executeTask` factory function tests)
 
-- [ ] `087-update-parallel-executor.md` — Update `ParallelExecutor` to pass dependencies to the `Executor` instances it creates.
+- [x] `087-update-parallel-executor.md` — Update `ParallelExecutor` to pass dependencies to the `Executor` instances it creates.
 
   **Files to modify:**
   - `packages/cli/src/core/parallel-executor.ts` — Update the `Executor` instantiation to optionally accept and forward `ExecutorDependencies`. This is a minimal change: the parallel executor should accept an optional `deps` in its own options and pass it through when creating child Executor instances. If not provided, Executor will use its own defaults (no behavior change).
@@ -359,7 +359,7 @@ This plan refactors the Executor into three well-defined phases (PreFlight, Exec
 
 ### Phase 4: Cleanup and documentation
 
-- [ ] `088-cleanup-and-docs.md` — Final cleanup, update CLAUDE.md architecture section, and verify everything works end-to-end.
+- [x] `088-cleanup-and-docs.md` — Final cleanup, update CLAUDE.md architecture section, and verify everything works end-to-end.
 
   **Files to modify:**
   - `packages/cli/src/core/executor.ts` — Remove any dead code, unused imports, or commented-out blocks left over from the refactor. Ensure the file is under 150 lines (down from ~987).
