@@ -12,7 +12,7 @@ execution:
   max_iterations: 10
 validation:
   lint: pnpm lint
-  typecheck: pnpm typecheck
+  typecheck: pnpm --filter cli typecheck
   test: pnpm test
   build: pnpm build
 skills:
