@@ -265,6 +265,10 @@ Upgrade ParallelExecutor with explicit dependency declarations, inter-wave verif
   **Scope:** `packages/cli/src/core/parallel-executor.ts`, `packages/cli/src/core/plan-executor.ts`, `packages/cli/src/types/index.ts`
   **Tests:** Verify file existence checks, validation between waves, graceful handling of missing summaries
 
+### Phase 5: Dedicated Integration & E2E Tests
+
+- [ ] `165-v120-moat-deepening-tests.md` — Integration and E2E tests for all three feature areas. **Context freshness** (8 tests): TaskSummary generation, markdown rendering, prompt rendering, save/load roundtrip, wave accumulation, context with summaries, context size estimation, summary cap. **Research pipeline** (6 tests): research task type parsing, findings loading, keyword matching, explicit reference, research skill loading, scope enforcement. **Inter-wave verification** (6 tests): file existence check pass/fail, creates/needs dependency detection, mixed dependency types, validation between waves, missing summary handling. **20+ test cases total.**
+
 ## Dependencies
 
 ```

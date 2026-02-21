@@ -334,6 +334,10 @@ Transform plan files from passive documentation into active execution orchestrat
   **Scope:** `packages/cli/src/commands/plan.ts`, `packages/cli/src/index.ts`
   **Tests:** `packages/cli/src/commands/plan.test.ts`
 
+### Phase 4: Dedicated Integration & E2E Tests
+
+- [ ] `164-v110-killer-features-tests.md` — Integration and E2E tests for all three feature areas. **STATE.md persistence** (7 tests): save/load roundtrip, decisions, blockers, session continuity, truncation at 150 lines, quick tasks table, context loading. **Quick mode** (5 tests): in-memory task generation, type inference (bugfix/test/docs), prompt building, iteration limits, commit prefix. **Plan execution** (8 tests): checkbox parsing, dependency resolution, cycle detection, auto-wave assignment, execution order, checkbox updates, resumability, stop-on-failure. **20+ test cases total.**
+
 ## Dependencies
 
 ```
@@ -354,6 +358,7 @@ Transform plan files from passive documentation into active execution orchestrat
 - **115** (quick command) depends on 114
 - **117** (plan executor) depends on 116
 - **118** (plan command) depends on 116 + 117
+- **164** (tests) depends on all implementation tasks (110-118)
 
 ## Risks
 

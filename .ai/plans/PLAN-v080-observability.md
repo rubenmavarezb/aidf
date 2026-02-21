@@ -197,6 +197,10 @@ The goal is to give teams full visibility into how their AI-assisted development
   - In `aidf report summary`, show average phase distribution across all runs
   - No new command-line flags — this enhances existing `--verbose` and `aidf report` output
 
+### Phase 7: Dedicated Tests
+
+- [ ] `163-observability-tests.md` — Unit and integration tests for the full observability pipeline. Covers MetricsCollector (timing, tokens, edge cases), ReportWriter (write/read roundtrip, filtering, aggregation), CSV export (format, escaping), webhook (mock fetch, retry, filtering), CI detection (env var mocking), PhaseProfiler (timing accuracy, nested phases), and a full pipeline integration test (collector → report → write → read → verify). **22+ test cases.**
+
 ## Dependencies
 
 - **124** is foundational — all other tasks depend on its type definitions
@@ -213,7 +217,9 @@ The goal is to give teams full visibility into how their AI-assisted development
 - **135** depends on 125 (MetricsCollector delegates to PhaseProfiler)
 - **136** depends on 135 + 131 (profiling data + report display)
 
-Suggested execution order: 124 -> 125 + 126 + 130 (parallel) -> 127 -> 128 + 129 + 134 + 135 (parallel) -> 131 + 132 + 133 + 136
+- **163** depends on all implementation tasks (124-136) — runs after all features are built
+
+Suggested execution order: 124 -> 125 + 126 + 130 (parallel) -> 127 -> 128 + 129 + 134 + 135 (parallel) -> 131 + 132 + 133 + 136 -> 163
 
 ## Risks
 
