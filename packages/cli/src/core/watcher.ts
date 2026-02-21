@@ -16,7 +16,7 @@ import type {
 import { executeTask } from './executor.js';
 import { Logger } from '../utils/logger.js';
 import { findAndLoadConfig } from '../utils/config.js';
-import { LiveStatus } from '../utils/live-status.js';
+import { LiveStatus, extractTaskLabel } from '../utils/live-status.js';
 import { NotificationService } from '../utils/notifications.js';
 
 const CONFIG_FILES = ['config.yml', 'config.yaml', 'config.json'];
@@ -298,7 +298,8 @@ export class Watcher {
     this.logger.info(`Executing task: ${basename(taskPath)}`);
 
     const maxIterations = this.options.maxIterations ?? 50;
-    const liveStatus = new LiveStatus(maxIterations, this.options.quiet);
+    const taskLabel = extractTaskLabel(taskPath);
+    const liveStatus = new LiveStatus(maxIterations, this.options.quiet, taskLabel);
     liveStatus.start();
 
     try {

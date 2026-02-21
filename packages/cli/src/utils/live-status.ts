@@ -5,6 +5,21 @@ const HEARTBEAT_INTERVAL = 3_000; // 3 seconds
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
 /**
+ * Extract a short task label from a task filename.
+ * e.g. "080-executor-dependencies-interface.md" -> "Task 080"
+ *      "/path/to/tasks/pending/089-improve-live-status-ux.md" -> "Task 089"
+ */
+export function extractTaskLabel(taskPath: string): string {
+  const filename = taskPath.split('/').pop() ?? taskPath;
+  const match = filename.match(/^(\d+)/);
+  if (match) {
+    return `Task ${match[1]}`;
+  }
+  // Fallback: use filename without extension
+  return filename.replace(/\.md$/, '');
+}
+
+/**
  * Live status indicator that prints periodic heartbeat lines during execution.
  * Heartbeats are non-destructive — they print as regular log lines between
  * AI output, so they never conflict with streaming stdout.
@@ -20,11 +35,14 @@ export class LiveStatus {
   private active = false;
   private lastOutputTime = 0;
   private spinnerIndex = 0;
+  private taskLabel: string;
+  private lastFilesModified = 0;
 
-  constructor(totalIterations: number, quiet: boolean = false) {
+  constructor(totalIterations: number, quiet: boolean = false, taskLabel?: string) {
     this.totalIterations = totalIterations;
     this.startTime = Date.now();
     this.quiet = quiet;
+    this.taskLabel = taskLabel ?? '';
   }
 
   /**
@@ -47,7 +65,15 @@ export class LiveStatus {
     this.phase = event.phase;
     this.iteration = event.iteration;
     this.totalIterations = event.totalIterations;
-    this.filesModified = event.filesModified;
+
+    // Track file counts: preserve last known count when entering AI phase
+    if (event.phase !== 'Executing AI') {
+      this.filesModified = event.filesModified;
+      this.lastFilesModified = event.filesModified;
+    } else {
+      // During AI execution, show last known count
+      this.filesModified = this.lastFilesModified;
+    }
 
     // Print on phase transitions or iteration transitions
     if (this.active && (previousPhase !== event.phase || previousIteration !== event.iteration)) {
@@ -70,7 +96,7 @@ export class LiveStatus {
   phaseComplete(message: string): void {
     if (this.quiet) return;
     const elapsed = this.formatElapsed();
-    console.log(`${chalk.green('✓')} ${message} ${chalk.gray(`⏱ ${elapsed}`)}`);
+    console.log(`${chalk.green('✓')} ${this.prefixLabel()}${message} ${chalk.gray(`⏱ ${elapsed}`)}`);
   }
 
   /**
@@ -79,7 +105,7 @@ export class LiveStatus {
   phaseFailed(message: string): void {
     if (this.quiet) return;
     const elapsed = this.formatElapsed();
-    console.log(`${chalk.red('✗')} ${message} ${chalk.gray(`⏱ ${elapsed}`)}`);
+    console.log(`${chalk.red('✗')} ${this.prefixLabel()}${message} ${chalk.gray(`⏱ ${elapsed}`)}`);
   }
 
   /**
@@ -90,18 +116,22 @@ export class LiveStatus {
     this.iteration = iteration;
     this.totalIterations = totalIterations;
     const elapsed = this.formatElapsed();
-    console.log(`${chalk.cyan('▸')} ${chalk.gray(`Iteration ${iteration}/${totalIterations} started · ⏱ ${elapsed}`)}`);
+    console.log(`${chalk.cyan('▸')} ${this.prefixLabel()}${chalk.gray(`Iter ${iteration}/${totalIterations} started · ⏱ ${elapsed}`)}`);
   }
 
   /**
    * Log iteration end with summary
    */
-  iterationEnd(iteration: number, filesModified: number, success: boolean): void {
+  iterationEnd(iteration: number, filesModified: number, success: boolean, detail?: string): void {
     if (this.quiet) return;
+    this.lastFilesModified = filesModified;
     const elapsed = this.formatElapsed();
-    const files = `${filesModified} file${filesModified !== 1 ? 's' : ''} modified`;
+    const files = filesModified > 0
+      ? `${filesModified} file${filesModified !== 1 ? 's' : ''}`
+      : 'no files changed';
     const prefix = success ? chalk.green('✓') : chalk.red('✗');
-    console.log(`${prefix} ${chalk.gray(`Iteration ${iteration} completed · ${files} · ⏱ ${elapsed}`)}`);
+    const detailSuffix = detail ? ` · ${detail}` : '';
+    console.log(`${prefix} ${this.prefixLabel()}${chalk.gray(`Iter ${iteration} complete · ${files}${detailSuffix} · ⏱ ${elapsed}`)}`);
   }
 
   /**
@@ -131,16 +161,28 @@ export class LiveStatus {
 
   private printStatus(type: 'heartbeat' | 'phase'): void {
     const elapsed = this.formatElapsed();
-    const iter = `Iteration ${this.iteration}/${this.totalIterations}`;
+    const iter = `Iter ${this.iteration}/${this.totalIterations}`;
     const phase = this.phase || 'Starting';
-    const files = `${this.filesModified} file${this.filesModified !== 1 ? 's' : ''}`;
+
+    // Only show file count if we have files (avoid "0 files" noise)
+    const filesPart = this.filesModified > 0
+      ? ` · ${this.filesModified} file${this.filesModified !== 1 ? 's' : ''}`
+      : '';
 
     const prefix = type === 'heartbeat'
       ? chalk.yellow(SPINNER_FRAMES[this.spinnerIndex++ % SPINNER_FRAMES.length])
       : chalk.cyan('▸');
 
-    const line = `${prefix} ${chalk.gray(`${iter} · ${phase} · ${files} · ⏱ ${elapsed}`)}`;
+    const line = `${prefix} ${this.prefixLabel()}${chalk.gray(`${iter} · ${phase}${filesPart} · ⏱ ${elapsed}`)}`;
     console.log(line);
+  }
+
+  /**
+   * Build the task label prefix for status lines.
+   */
+  private prefixLabel(): string {
+    if (!this.taskLabel) return '';
+    return `${chalk.bold(this.taskLabel)} · `;
   }
 
   private formatElapsed(): string {
