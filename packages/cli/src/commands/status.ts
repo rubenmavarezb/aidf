@@ -8,7 +8,8 @@ import chalk from 'chalk';
 import { Logger } from '../utils/logger.js';
 import { ContextLoader } from '../core/context-loader.js';
 import { findAndLoadConfig } from '../utils/config.js';
-import type { StatusData, TaskStats, LastExecution } from '../types/index.js';
+import { ReportWriter } from '../core/report-writer.js';
+import type { StatusData, TaskStats, LastExecution, ReportSummary } from '../types/index.js';
 
 export function createStatusCommand(): Command {
   const cmd = new Command('status')
@@ -17,6 +18,7 @@ export function createStatusCommand(): Command {
     .option('--log-format <format>', 'Log format (text|json)', 'text')
     .option('--log-file <path>', 'Write logs to file')
     .option('--log-rotate', 'Enable log rotation (append timestamp to filename)')
+    .option('--report', 'Include last execution report summary')
     .action(async (options) => {
       const logger = new Logger({
         logFormat: options.logFormat as 'text' | 'json' | undefined,
@@ -51,6 +53,21 @@ export function createStatusCommand(): Command {
         } else {
           printStatusTable(statusData, logger);
         }
+
+        // Append report summary if --report flag
+        if (options.report) {
+          try {
+            const writer = new ReportWriter({ cwd: projectRoot });
+            const reports = writer.list({ });
+            if (reports.length > 0) {
+              const latest = reports[0];
+              printReportSummary(latest, reports, logger);
+            }
+          } catch {
+            // Report data is optional
+          }
+        }
+
         await logger.close();
 
       } catch (error) {
@@ -355,6 +372,38 @@ export function printStatusTable(data: StatusData, logger: Logger): void {
   ]
     .filter(Boolean)
     .join('\n'));
+}
+
+function printReportSummary(latest: ReportSummary, allReports: ReportSummary[], logger: Logger): void {
+  const lines: string[] = [
+    '',
+    chalk.bold('Last Run Report:'),
+    `  Run ID:     ${chalk.gray(latest.runId.slice(0, 8))}`,
+    `  Task:       ${chalk.gray(latest.taskPath)}`,
+    `  Status:     ${latest.status === 'completed' ? chalk.green('completed') : latest.status === 'blocked' ? chalk.yellow('blocked') : chalk.red('failed')}`,
+    `  Iterations: ${latest.iterations}`,
+  ];
+
+  if (latest.totalTokens) {
+    lines.push(`  Tokens:     ${latest.totalTokens.toLocaleString()}`);
+  }
+  if (latest.estimatedCost !== undefined) {
+    lines.push(`  Cost:       ~$${latest.estimatedCost.toFixed(4)}`);
+  }
+  lines.push(`  Duration:   ${(latest.durationMs / 1000).toFixed(1)}s`);
+
+  // Trend vs last 5 runs
+  if (allReports.length >= 2) {
+    const recent = allReports.slice(0, Math.min(5, allReports.length));
+    const avgCost = recent.reduce((s, r) => s + (r.estimatedCost ?? 0), 0) / recent.length;
+    if (latest.estimatedCost !== undefined && avgCost > 0) {
+      const diff = ((latest.estimatedCost - avgCost) / avgCost) * 100;
+      const trend = diff > 10 ? chalk.red('↑ trending up') : diff < -10 ? chalk.green('↓ trending down') : chalk.gray('→ stable');
+      lines.push(`  Cost trend: ${trend} (vs last ${recent.length} runs)`);
+    }
+  }
+
+  logger.box('Execution Report', lines.join('\n'));
 }
 
 export function printStatusJson(data: StatusData): void {

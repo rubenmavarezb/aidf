@@ -130,6 +130,10 @@ export class ClaudeCliProvider implements Provider {
         const filesChanged = filesAfter.filter(f => !filesBefore.includes(f));
         const completionSignal = this.detectCompletionSignal(stdout);
 
+        // Estimate tokens from character counts (~4 chars per token)
+        const estimatedInput = Math.ceil(prompt.length / 4);
+        const estimatedOutput = Math.ceil(stdout.length / 4);
+
         if (code !== 0 && code !== null && stderr) {
           const err = ProviderError.apiError('claude-cli', stderr, code);
           resolve({
@@ -141,6 +145,11 @@ export class ClaudeCliProvider implements Provider {
             filesChanged,
             iterationComplete: completionSignal !== undefined,
             completionSignal,
+            tokenUsage: {
+              inputTokens: estimatedInput,
+              outputTokens: estimatedOutput,
+              estimated: true,
+            },
           });
         } else {
           resolve({
@@ -150,6 +159,11 @@ export class ClaudeCliProvider implements Provider {
             filesChanged,
             iterationComplete: completionSignal !== undefined,
             completionSignal,
+            tokenUsage: {
+              inputTokens: estimatedInput,
+              outputTokens: estimatedOutput,
+              estimated: true,
+            },
           });
         }
       });
@@ -220,7 +234,7 @@ export function buildIterationPrompt(context: {
   let prompt = '';
 
   prompt += `# AIDF Autonomous Execution - Iteration ${context.iteration}\n\n`;
-  
+
   if (context.blockingContext) {
     prompt += `## Resuming Blocked Task\n\n`;
     prompt += `This task was previously blocked at iteration ${context.blockingContext.previousIteration}.\n\n`;

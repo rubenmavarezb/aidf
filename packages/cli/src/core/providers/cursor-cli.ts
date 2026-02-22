@@ -114,6 +114,10 @@ export class CursorCliProvider implements Provider {
         const filesChanged = filesAfter.filter(f => !filesBefore.includes(f));
         const completionSignal = this.detectCompletionSignal(stdout);
 
+        // Estimate tokens from character counts (~4 chars per token)
+        const estimatedInput = Math.ceil(prompt.length / 4);
+        const estimatedOutput = Math.ceil(stdout.length / 4);
+
         resolve({
           success: code === 0,
           output: stdout,
@@ -121,6 +125,11 @@ export class CursorCliProvider implements Provider {
           filesChanged,
           iterationComplete: completionSignal !== undefined,
           completionSignal,
+          tokenUsage: {
+            inputTokens: estimatedInput,
+            outputTokens: estimatedOutput,
+            estimated: true,
+          },
         });
       });
 

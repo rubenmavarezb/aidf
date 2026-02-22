@@ -3,6 +3,7 @@
 export interface TokenUsage {
   inputTokens: number;
   outputTokens: number;
+  estimated?: boolean;
 }
 
 export interface ConversationMetrics {
