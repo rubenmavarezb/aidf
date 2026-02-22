@@ -5,6 +5,13 @@ export interface TokenUsage {
   outputTokens: number;
 }
 
+export interface ConversationMetrics {
+  totalMessages: number;
+  preservedMessages: number;
+  evictedMessages: number;
+  estimatedTokens: number;
+}
+
 export interface ExecutionResult {
   success: boolean;
   output: string;
@@ -14,6 +21,7 @@ export interface ExecutionResult {
   completionSignal?: string;
   tokenUsage?: TokenUsage;
   conversationState?: unknown;
+  conversationMetrics?: ConversationMetrics;
 }
 
 export interface ProviderOptions {
@@ -24,6 +32,7 @@ export interface ProviderOptions {
   onOutput?: (chunk: string) => void;
   sessionContinuation?: boolean;
   conversationState?: unknown;
+  conversationConfig?: import('../../types/index.js').ConversationHistoryConfig;
 }
 
 export interface Provider {

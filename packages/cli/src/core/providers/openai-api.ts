@@ -4,9 +4,11 @@ import type {
   ExecutionResult,
   ApiProviderOptions,
   ToolDefinition,
+  ConversationMetrics,
 } from './types.js';
 import { FILE_TOOLS } from './types.js';
 import { ToolHandler } from './tool-handler.js';
+import { ConversationWindow, type GenericMessage } from './conversation-window.js';
 
 /**
  * Provider that uses OpenAI API directly with tool calling
@@ -47,9 +49,14 @@ export class OpenAiApiProvider implements Provider {
     let fullOutput = '';
     let totalInputTokens = 0;
     let totalOutputTokens = 0;
+    let conversationMetrics: ConversationMetrics | undefined;
     const messages: OpenAI.ChatCompletionMessageParam[] = options.conversationState
       ? [...(options.conversationState as OpenAI.ChatCompletionMessageParam[]), { role: 'user', content: prompt }]
       : [{ role: 'user', content: prompt }];
+
+    const window = options.conversationConfig
+      ? new ConversationWindow(options.conversationConfig)
+      : null;
 
     try {
       const tools = this.convertToolsToOpenAIFormat(FILE_TOOLS);
@@ -95,10 +102,28 @@ export class OpenAiApiProvider implements Provider {
               content: result,
             });
           }
+
+          // Trim conversation if window is configured
+          if (window) {
+            const trimResult = await window.trim(messages as GenericMessage[]);
+            messages.length = 0;
+            messages.push(...(trimResult.trimmed as OpenAI.ChatCompletionMessageParam[]));
+            conversationMetrics = trimResult.metrics;
+          }
         } else {
           // No more tool calls
           break;
         }
+      }
+
+      // Final metrics if no trimming occurred
+      if (window && !conversationMetrics) {
+        conversationMetrics = {
+          totalMessages: messages.length,
+          preservedMessages: messages.length,
+          evictedMessages: 0,
+          estimatedTokens: new ConversationWindow().estimateTokens(messages as GenericMessage[]),
+        };
       }
 
       return {
@@ -110,6 +135,7 @@ export class OpenAiApiProvider implements Provider {
         completionSignal: isComplete ? '<TASK_COMPLETE>' : undefined,
         tokenUsage: { inputTokens: totalInputTokens, outputTokens: totalOutputTokens },
         conversationState: messages,
+        conversationMetrics,
       };
     } catch (error) {
       return {
@@ -122,6 +148,7 @@ export class OpenAiApiProvider implements Provider {
           ? { inputTokens: totalInputTokens, outputTokens: totalOutputTokens }
           : undefined,
         conversationState: messages,
+        conversationMetrics,
       };
     }
   }

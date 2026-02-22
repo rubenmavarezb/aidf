@@ -4,9 +4,11 @@ import type {
   ExecutionResult,
   ApiProviderOptions,
   ToolDefinition,
+  ConversationMetrics,
 } from './types.js';
 import { FILE_TOOLS } from './types.js';
 import { ToolHandler } from './tool-handler.js';
+import { ConversationWindow, type GenericMessage } from './conversation-window.js';
 
 /**
  * Provider that uses Anthropic API directly with tool calling
@@ -47,9 +49,14 @@ export class AnthropicApiProvider implements Provider {
     let fullOutput = '';
     let totalInputTokens = 0;
     let totalOutputTokens = 0;
+    let conversationMetrics: ConversationMetrics | undefined;
     let messages: Anthropic.MessageParam[] = options.conversationState
       ? [...(options.conversationState as Anthropic.MessageParam[]), { role: 'user', content: prompt }]
       : [{ role: 'user', content: prompt }];
+
+    const window = options.conversationConfig
+      ? new ConversationWindow(options.conversationConfig)
+      : null;
 
     try {
 
@@ -102,6 +109,13 @@ export class AnthropicApiProvider implements Provider {
           }
         }
 
+        // Trim conversation if window is configured
+        if (window) {
+          const trimResult = await window.trim(messages as GenericMessage[]);
+          messages = trimResult.trimmed as Anthropic.MessageParam[];
+          conversationMetrics = trimResult.metrics;
+        }
+
         // If no tool calls, consider iteration complete
         if (
           response.stop_reason === 'end_turn' &&
@@ -109,6 +123,16 @@ export class AnthropicApiProvider implements Provider {
         ) {
           break;
         }
+      }
+
+      // Final metrics if no trimming occurred
+      if (window && !conversationMetrics) {
+        conversationMetrics = {
+          totalMessages: messages.length,
+          preservedMessages: messages.length,
+          evictedMessages: 0,
+          estimatedTokens: new ConversationWindow().estimateTokens(messages as GenericMessage[]),
+        };
       }
 
       return {
@@ -120,6 +144,7 @@ export class AnthropicApiProvider implements Provider {
         completionSignal: isComplete ? '<TASK_COMPLETE>' : undefined,
         tokenUsage: { inputTokens: totalInputTokens, outputTokens: totalOutputTokens },
         conversationState: messages,
+        conversationMetrics,
       };
     } catch (error) {
       return {
@@ -132,6 +157,7 @@ export class AnthropicApiProvider implements Provider {
           ? { inputTokens: totalInputTokens, outputTokens: totalOutputTokens }
           : undefined,
         conversationState: messages,
+        conversationMetrics,
       };
     }
   }
