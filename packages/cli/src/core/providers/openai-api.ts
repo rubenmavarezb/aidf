@@ -9,6 +9,7 @@ import type {
 import { FILE_TOOLS } from './types.js';
 import { ToolHandler } from './tool-handler.js';
 import { ConversationWindow, type GenericMessage } from './conversation-window.js';
+import { ProviderError, PermissionError } from '../errors.js';
 
 /**
  * Provider that uses OpenAI API directly with tool calling
@@ -138,10 +139,13 @@ export class OpenAiApiProvider implements Provider {
         conversationMetrics,
       };
     } catch (error) {
+      const categorized = this.categorizeError(error);
       return {
         success: false,
         output: fullOutput,
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: categorized.message,
+        errorCategory: categorized.category,
+        errorCode: categorized.code,
         filesChanged: this.toolHandler.getChangedFiles(),
         iterationComplete: false,
         tokenUsage: totalInputTokens > 0 || totalOutputTokens > 0
@@ -151,6 +155,32 @@ export class OpenAiApiProvider implements Provider {
         conversationMetrics,
       };
     }
+  }
+
+  private categorizeError(error: unknown): ProviderError | PermissionError {
+    // Check for status-based errors (works with both real SDK errors and mocks)
+    const err = error as { status?: number; message?: string };
+    const status = err.status;
+    const message = err.message ?? (error instanceof Error ? error.message : 'Unknown error');
+
+    if (status !== undefined) {
+      if (status === 429) {
+        return ProviderError.rateLimit('openai-api', message);
+      }
+      if (status === 401 || status === 403) {
+        return PermissionError.apiAuth('openai-api');
+      }
+      if (status >= 500) {
+        return ProviderError.apiError('openai-api', message, status);
+      }
+      return ProviderError.apiError('openai-api', message, status);
+    }
+
+    if (error instanceof SyntaxError) {
+      return ProviderError.crash('openai-api', 'Invalid tool call arguments');
+    }
+
+    return ProviderError.crash('openai-api', message);
   }
 
   private convertToolsToOpenAIFormat(tools: ToolDefinition[]): OpenAI.ChatCompletionTool[] {

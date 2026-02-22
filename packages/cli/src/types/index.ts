@@ -1,3 +1,14 @@
+// === Error Types ===
+
+export type ErrorCategory =
+  | 'provider'
+  | 'timeout'
+  | 'validation'
+  | 'scope'
+  | 'config'
+  | 'git'
+  | 'permission';
+
 // === Configuration Types ===
 
 export interface AidfConfig {
@@ -103,6 +114,8 @@ export interface NotificationEvent {
   iterations: number;
   filesModified: string[];
   error?: string;
+  errorCategory?: ErrorCategory;
+  errorCode?: string;
   blockedReason?: string;
   timestamp: Date;
 }
@@ -186,8 +199,8 @@ export interface LoadedContext {
 
 export type ScopeDecision =
   | { action: 'ALLOW' }
-  | { action: 'BLOCK'; reason: string; files: string[] }
-  | { action: 'ASK_USER'; reason: string; files: string[] };
+  | { action: 'BLOCK'; reason: string; files: string[]; error?: import('../core/errors.js').ScopeError }
+  | { action: 'ASK_USER'; reason: string; files: string[]; error?: import('../core/errors.js').ScopeError };
 
 export type ScopeMode = 'strict' | 'ask' | 'permissive';
 
@@ -211,6 +224,7 @@ export interface ValidationSummary {
   passed: boolean;
   results: ValidationResult[];
   totalDuration: number;
+  error?: import('../core/errors.js').ValidationError;
 }
 
 // === Executor Types ===
@@ -288,6 +302,9 @@ export interface ExecutorResult {
   iterations: number;
   filesModified: string[];
   error?: string;
+  errorCategory?: ErrorCategory;
+  errorCode?: string;
+  errorDetails?: Record<string, unknown>;
   blockedReason?: string;
   taskPath: string;
   tokenUsage?: TokenUsageSummary;
@@ -490,4 +507,39 @@ export interface SecurityConfig {
   warn_on_skip?: boolean;
   /** Command execution policy for API providers */
   commands?: CommandPolicy;
+}
+
+// === Plan Types ===
+
+export interface PlanTask {
+  filename: string;
+  taskPath: string;
+  description: string;
+  wave: number;
+  dependsOn: string[];
+  completed: boolean;
+  lineNumber: number;
+}
+
+export interface PlanWave {
+  number: number;
+  tasks: PlanTask[];
+}
+
+export interface ParsedPlan {
+  planPath: string;
+  name: string;
+  overview: string;
+  tasks: PlanTask[];
+  waves: PlanWave[];
+}
+
+export interface PlanExecutionResult {
+  success: boolean;
+  planPath: string;
+  totalTasks: number;
+  completedTasks: number;
+  failedTasks: number;
+  blockedTasks: number;
+  skippedTasks: number;
 }

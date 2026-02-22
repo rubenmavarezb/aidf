@@ -4,6 +4,7 @@ import { existsSync } from 'fs';
 import { join } from 'path';
 import { z } from 'zod';
 import type { AidfConfig } from '../types/index.js';
+import { ConfigError } from '../core/errors.js';
 
 // === Zod Schema for AidfConfig ===
 
@@ -98,8 +99,10 @@ export function validateConfig(config: unknown): AidfConfig {
       const path = issue.path.join('.');
       return `  - ${path || 'root'}: ${issue.message}`;
     });
-    throw new Error(
-      `Invalid AIDF config:\n${issues.join('\n')}`
+    throw ConfigError.invalid(
+      'config',
+      config,
+      `Valid AIDF config.\n${issues.join('\n')}`
     );
   }
   return result.data as AidfConfig;
@@ -115,7 +118,7 @@ export function resolveConfigValue(value: string): string {
   let resolved = value.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (_match, varName: string) => {
     const envValue = process.env[varName];
     if (envValue === undefined) {
-      throw new Error(`Environment variable "${varName}" is not set (referenced as \${${varName}})`);
+      throw ConfigError.missingEnvVar(varName);
     }
     return envValue;
   });
@@ -125,7 +128,7 @@ export function resolveConfigValue(value: string): string {
   resolved = resolved.replace(/(?<!\$\{)\$([A-Za-z_][A-Za-z0-9_]*)/g, (_match, varName: string) => {
     const envValue = process.env[varName];
     if (envValue === undefined) {
-      throw new Error(`Environment variable "${varName}" is not set (referenced as $${varName})`);
+      throw ConfigError.missingEnvVar(varName);
     }
     return envValue;
   });
@@ -267,13 +270,24 @@ export async function loadConfigFromFile(configPath: string): Promise<AidfConfig
   const fs = await import('fs/promises');
   const yaml = await import('yaml');
 
-  const content = await fs.readFile(configPath, 'utf-8');
+  let content: string;
+  try {
+    content = await fs.readFile(configPath, 'utf-8');
+  } catch (error) {
+    throw ConfigError.missing(configPath);
+  }
 
-  const raw = configPath.endsWith('.json')
-    ? JSON.parse(content)
-    : yaml.parse(content);
+  let raw: unknown;
+  try {
+    raw = configPath.endsWith('.json')
+      ? JSON.parse(content)
+      : yaml.parse(content);
+  } catch (error) {
+    const rawError = error instanceof Error ? error.message : String(error);
+    throw ConfigError.parseError(configPath, rawError);
+  }
 
-  const normalized = normalizeConfig(raw);
+  const normalized = normalizeConfig(raw as Record<string, unknown>);
   return validateConfig(normalized);
 }
 

@@ -2,6 +2,7 @@
 
 import { spawn } from 'child_process';
 import type { ValidationResult, ValidationSummary, ValidationConfig } from '../types/index.js';
+import { ValidationError as AidfValidationError } from './errors.js';
 
 /**
  * Ejecuta un comando y captura output
@@ -92,12 +93,33 @@ export async function runValidation(
     }
   }
 
-  return {
+  const passed = results.every(r => r.passed);
+  const failedResult = results.find(r => !r.passed);
+
+  const phaseCodeMap: Record<string, 'pre_commit' | 'pre_push'> = {
+    pre_commit: 'pre_commit',
+    pre_push: 'pre_push',
+  };
+
+  const summary: ValidationSummary = {
     phase,
-    passed: results.every(r => r.passed),
+    passed,
     results,
     totalDuration: Date.now() - startTime,
   };
+
+  if (!passed && failedResult) {
+    const factoryMethod = phaseCodeMap[phase] === 'pre_push'
+      ? AidfValidationError.prePush
+      : AidfValidationError.preCommit;
+    summary.error = factoryMethod(
+      failedResult.command,
+      failedResult.exitCode,
+      failedResult.output
+    );
+  }
+
+  return summary;
 }
 
 /**

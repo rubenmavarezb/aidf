@@ -2,6 +2,7 @@
 
 import { minimatch } from 'minimatch';
 import type { TaskScope, ScopeDecision, ScopeMode, FileChange } from '../types/index.js';
+import { ScopeError } from './errors.js';
 
 /**
  * Verifica si un archivo coincide con algún patrón de la lista
@@ -111,6 +112,7 @@ export function checkFileChanges(
       action: 'BLOCK',
       reason: `${blocked.length} file(s) in forbidden or outside allowed scope`,
       files: blocked,
+      error: ScopeError.forbidden(blocked, mode),
     };
   }
 
@@ -120,6 +122,7 @@ export function checkFileChanges(
       action: 'ASK_USER',
       reason: `${needsApproval.length} file(s) require approval`,
       files: needsApproval,
+      error: ScopeError.outsideAllowed(needsApproval, mode),
     };
   }
 

@@ -16,6 +16,8 @@ export interface ExecutionResult {
   success: boolean;
   output: string;
   error?: string;
+  errorCategory?: import('../../types/index.js').ErrorCategory;
+  errorCode?: string;
   filesChanged: string[];
   iterationComplete: boolean;
   completionSignal?: string;

@@ -19,6 +19,7 @@ import { PreFlightPhase, PreFlightError } from './phases/preflight.js';
 import { ExecutionPhase } from './phases/execution.js';
 import { PostFlightPhase } from './phases/postflight.js';
 import type { PhaseContext } from './phases/types.js';
+import { AidfError } from './errors.js';
 
 export class Executor {
   private options: ExecutorOptions;
@@ -141,7 +142,7 @@ export class Executor {
 
       // Run postflight for failed state
       const postFlight = new PostFlightPhase();
-      return await postFlight.execute(ctx, {
+      const postFlightResult = await postFlight.execute(ctx, {
         preFlightResult: null,
         executionResult: {
           completedNormally: false,
@@ -149,6 +150,15 @@ export class Executor {
           lastError: this.state.lastError,
         },
       });
+
+      // Populate error category if we have a typed error
+      if (error instanceof AidfError) {
+        postFlightResult.errorCategory = error.category;
+        postFlightResult.errorCode = error.code;
+        postFlightResult.errorDetails = error.context;
+      }
+
+      return postFlightResult;
     }
   }
 
