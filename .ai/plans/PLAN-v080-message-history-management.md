@@ -1,6 +1,6 @@
 # PLAN: v0.8.0 — Message History Management for API Providers
 
-## Status: DRAFT
+## Status: COMPLETED
 
 ## Overview
 

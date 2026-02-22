@@ -81,6 +81,13 @@ export class ExecutionPhase implements ExecutorPhase<PreFlightResult, ExecutionL
         );
       }
 
+      // Resolve conversation config
+      const conversationConfig = ctx.config.execution?.conversation ?? (
+        ctx.config.execution?.max_conversation_messages
+          ? { max_messages: ctx.config.execution.max_conversation_messages }
+          : undefined
+      );
+
       // Execute provider with timeout
       const timeoutMs = ctx.options.timeoutPerIteration * 1000;
       let result = await this.executeWithTimeout(
@@ -91,6 +98,7 @@ export class ExecutionPhase implements ExecutorPhase<PreFlightResult, ExecutionL
           onOutput: ctx.options.onOutput,
           sessionContinuation: useContinuation,
           conversationState: useContinuation ? iterState.conversationState : undefined,
+          conversationConfig,
         }),
         timeoutMs
       );
@@ -143,6 +151,26 @@ export class ExecutionPhase implements ExecutorPhase<PreFlightResult, ExecutionL
         ctx.deps.logger.info(
           `Iteration ${ctx.state.iteration} tokens: input=${result.tokenUsage.inputTokens.toLocaleString()}, output=${result.tokenUsage.outputTokens.toLocaleString()}`
         );
+      }
+
+      // Track conversation metrics
+      if (result.conversationMetrics) {
+        const cm = result.conversationMetrics;
+        ctx.state.conversationMessageCount = cm.totalMessages;
+        ctx.deps.logger.info(
+          `Conversation: ${cm.preservedMessages} messages (~${cm.estimatedTokens.toLocaleString()} tokens)`
+        );
+        if (cm.evictedMessages > 0) {
+          ctx.deps.logger.info(
+            `Trimmed conversation: ${cm.evictedMessages} messages removed`
+          );
+        }
+        const maxMessages = conversationConfig?.max_messages ?? 100;
+        if (maxMessages > 0 && cm.totalMessages >= maxMessages * 0.8) {
+          ctx.deps.logger.warn(
+            `Conversation approaching limit (${cm.totalMessages}/${maxMessages} messages)`
+          );
+        }
       }
 
       // Handle provider-level failures

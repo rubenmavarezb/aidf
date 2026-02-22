@@ -17,11 +17,20 @@ export interface ProviderConfig {
   model?: string;
 }
 
+export interface ConversationHistoryConfig {
+  max_messages?: number;
+  summarize_on_trim?: boolean;
+  preserve_first_n?: number;
+  preserve_last_n?: number;
+}
+
 export interface ExecutionConfig {
   max_iterations: number;
   max_consecutive_failures: number;
   timeout_per_iteration: number;
   session_continuation?: boolean;
+  max_conversation_messages?: number;
+  conversation?: ConversationHistoryConfig;
 }
 
 export interface PermissionsConfig {
@@ -225,6 +234,7 @@ export interface ExecutorState {
   tokenUsage?: { inputTokens: number; outputTokens: number };
   contextBreakdown?: ContextBreakdown;
   contextTokens?: number;
+  conversationMessageCount?: number;
 }
 
 export interface PhaseEvent {

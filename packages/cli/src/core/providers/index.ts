@@ -4,6 +4,7 @@ export * from './cursor-cli.js';
 export * from './anthropic-api.js';
 export * from './openai-api.js';
 export * from './tool-handler.js';
+export * from './conversation-window.js';
 
 import type { Provider } from './types.js';
 import { createClaudeCliProvider } from './claude-cli.js';
