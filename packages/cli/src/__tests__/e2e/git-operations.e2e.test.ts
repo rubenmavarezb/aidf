@@ -1,16 +1,14 @@
 // packages/cli/src/__tests__/e2e/git-operations.e2e.test.ts
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   createTempProject,
   createTaskFixture,
-  initGitRepo,
-  type TempProjectResult,
 } from './helpers/index.js';
-import { writeFile, mkdir, readFile, access } from 'fs/promises';
+import { writeFile, mkdir, readFile } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join, basename, dirname } from 'path';
-import { simpleGit, type SimpleGit } from 'simple-git';
+import { simpleGit } from 'simple-git';
 import { checkFileChanges } from '../../core/safety.js';
 import { moveTaskFile } from '../../utils/files.js';
 import type { FileChange } from '../../types/index.js';

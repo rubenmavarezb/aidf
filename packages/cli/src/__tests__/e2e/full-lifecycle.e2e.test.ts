@@ -1,6 +1,6 @@
 // packages/cli/src/__tests__/e2e/full-lifecycle.e2e.test.ts
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   createTempProject,
   createTaskFixture,
@@ -8,24 +8,15 @@ import {
   createConfigFixture,
   createRoleFixture,
   readTaskStatus,
-  type TempProjectResult,
 } from './helpers/index.js';
-import { Executor } from '../../core/executor.js';
 import { ContextLoader } from '../../core/context-loader.js';
 import { ScopeGuard } from '../../core/safety.js';
 import { writeFile, mkdir, readFile } from 'fs/promises';
-import { existsSync } from 'fs';
 import { join } from 'path';
-import { simpleGit } from 'simple-git';
-import { parse as yamlParse, stringify as yamlStringify } from 'yaml';
+import { parse as yamlParse } from 'yaml';
 import type {
   AidfConfig,
-  ExecutorDependencies,
-  ExecutorResult,
-  ExecutorOptions,
-  LoadedContext,
 } from '../../types/index.js';
-import type { Provider, ExecutionResult } from '../../core/providers/types.js';
 
 describe('Full Lifecycle E2E', () => {
   it('should load context from a real project with ContextLoader', async () => {

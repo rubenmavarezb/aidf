@@ -4,7 +4,7 @@ import { describe, it, expect } from 'vitest';
 import { createTempProject, createTaskFixture, type TempProjectResult } from './helpers/index.js';
 import { ContextLoader } from '../../core/context-loader.js';
 import { checkFileChanges, matchesPattern } from '../../core/safety.js';
-import type { ParsedTask, TaskScope, FileChange, ParallelExecutionResult, ParallelTaskResult, TaskDependency, ExecutorResult } from '../../types/index.js';
+import type { TaskScope, FileChange, ParallelExecutionResult, ParallelTaskResult, ExecutorResult } from '../../types/index.js';
 
 /**
  * Checks whether two sets of allowed-path patterns overlap.

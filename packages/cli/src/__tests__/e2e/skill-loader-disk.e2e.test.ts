@@ -2,12 +2,10 @@ import { describe, it, expect } from 'vitest';
 import {
   createTempProject,
   createSkillFixture,
-  type TempProjectResult,
 } from './helpers/index.js';
 import {
   SkillLoader,
   parseSkillFrontmatter,
-  validateSkillSecurity,
   generateSkillsXml,
 } from '../../core/skill-loader.js';
 import { writeFile, mkdir } from 'fs/promises';

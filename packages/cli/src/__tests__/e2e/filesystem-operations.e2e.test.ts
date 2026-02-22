@@ -1,10 +1,10 @@
 // packages/cli/src/__tests__/e2e/filesystem-operations.e2e.test.ts
 
 import { describe, it, expect } from 'vitest';
-import { createTempProject, type TempProjectResult } from './helpers/index.js';
-import { writeFile, mkdir, unlink, readFile } from 'fs/promises';
+import { createTempProject } from './helpers/index.js';
+import { writeFile, mkdir, unlink } from 'fs/promises';
 import { join } from 'path';
-import { simpleGit, type SimpleGit } from 'simple-git';
+import { simpleGit } from 'simple-git';
 
 describe('File Operations E2E - Real Filesystem', () => {
   it('should detect new file creation', async () => {
