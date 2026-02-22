@@ -2,7 +2,7 @@ import { spawn } from 'child_process';
 import type { Provider, ExecutionResult, ProviderOptions } from './types.js';
 import type { LoadedSkill } from '../../types/index.js';
 import { generateSkillsXml } from '../skill-loader.js';
-import { ProviderError, TimeoutError, GitError } from '../errors.js';
+import { ProviderError, TimeoutError } from '../errors.js';
 
 /**
  * @description Detects files that have been changed in the working directory using git status.
@@ -27,9 +27,7 @@ async function detectChangedFiles(cwd: string): Promise<string[]> {
       resolve(files);
     });
 
-    proc.on('error', (error) => {
-      // Wrap git errors but still resolve empty to avoid breaking the flow
-      // The error is available via GitError.statusFailed if callers need it
+    proc.on('error', () => {
       resolve([]);
     });
   });

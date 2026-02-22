@@ -273,7 +273,7 @@ export async function loadConfigFromFile(configPath: string): Promise<AidfConfig
   let content: string;
   try {
     content = await fs.readFile(configPath, 'utf-8');
-  } catch (error) {
+  } catch {
     throw ConfigError.missing(configPath);
   }
 
