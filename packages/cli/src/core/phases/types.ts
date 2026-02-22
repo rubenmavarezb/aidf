@@ -9,6 +9,7 @@ import type {
 import type { ScopeGuard } from '../safety.js';
 import type { Validator } from '../validator.js';
 import type { Provider } from '../providers/types.js';
+import type { MetricsCollector } from '../metrics-collector.js';
 
 export interface PhaseContext {
   config: AidfConfig;
@@ -17,6 +18,7 @@ export interface PhaseContext {
   cwd: string;
   taskPath: string;
   deps: ExecutorDependencies;
+  metrics?: MetricsCollector;
 }
 
 export interface PreFlightResult {

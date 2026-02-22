@@ -21,6 +21,8 @@ export interface AidfConfig {
   notifications?: NotificationsConfig;
   skills?: SkillsConfig;
   security?: SecurityConfig;
+  cost?: CostConfig;
+  observability?: ObservabilityConfig;
 }
 
 export interface ProviderConfig {
@@ -308,6 +310,7 @@ export interface ExecutorResult {
   blockedReason?: string;
   taskPath: string;
   tokenUsage?: TokenUsageSummary;
+  report?: ExecutionReport;
 }
 
 // === Status Command Types ===
@@ -542,4 +545,208 @@ export interface PlanExecutionResult {
   failedTasks: number;
   blockedTasks: number;
   skippedTasks: number;
+}
+
+// === Observability Types ===
+
+export interface CostRates {
+  inputPer1M: number;
+  outputPer1M: number;
+}
+
+export interface ModelCostRates {
+  [modelPattern: string]: CostRates;
+}
+
+export interface CostConfig {
+  rates?: ModelCostRates;
+  currency?: string; // always USD for now
+}
+
+export interface ObservabilityConfig {
+  webhook?: WebhookConfig;
+}
+
+export interface WebhookConfig {
+  enabled: boolean;
+  url: string;
+  headers?: Record<string, string>;
+  events?: Array<'completed' | 'blocked' | 'failed'>;
+  include_iterations?: boolean;
+  timeout?: number;
+  retry?: number;
+}
+
+export interface PhaseTimings {
+  contextLoading?: number;
+  aiExecution?: number;
+  scopeChecking?: number;
+  validation?: number;
+  gitOperations?: number;
+  other?: number;
+  [phase: string]: number | undefined;
+}
+
+export interface IterationTokens {
+  iteration: number;
+  input: number;
+  output: number;
+}
+
+export interface IterationCost {
+  iteration: number;
+  cost: number;
+}
+
+export interface IterationTiming {
+  iteration: number;
+  durationMs: number;
+  phases?: PhaseTimings;
+}
+
+export interface IterationMetrics {
+  iteration: number;
+  input: number;
+  output: number;
+  cost?: number;
+  durationMs: number;
+  phases?: PhaseTimings;
+  filesChanged?: string[];
+}
+
+export interface ValidationRun {
+  iteration: number;
+  phase: string;
+  command: string;
+  passed: boolean;
+  durationMs: number;
+  exitCode: number;
+}
+
+export interface CIEnvironment {
+  ci: boolean;
+  ciProvider?: string;
+  ciBuildId?: string;
+  ciBranch?: string;
+  ciCommit?: string;
+}
+
+export interface ExecutionReport {
+  // Run metadata
+  runId: string;
+  timestamp: string; // ISO 8601
+  taskPath: string;
+  taskGoal?: string;
+  taskType?: string;
+  roleName?: string;
+  provider: {
+    type: string;
+    model?: string;
+  };
+  cwd: string;
+  aidfVersion?: string;
+
+  // Outcome
+  status: 'completed' | 'blocked' | 'failed';
+  iterations: number;
+  maxIterations: number;
+  consecutiveFailures?: number;
+  error?: string;
+  blockedReason?: string;
+
+  // Token usage
+  tokens?: {
+    contextTokens?: number;
+    totalInput?: number;
+    totalOutput?: number;
+    totalTokens?: number;
+    estimated?: boolean;
+    perIteration?: IterationTokens[];
+    breakdown?: ContextBreakdown;
+  };
+
+  // Cost
+  cost?: {
+    estimatedTotal?: number;
+    currency: string;
+    rates?: CostRates;
+    perIteration?: IterationCost[];
+  };
+
+  // Timing
+  timing: {
+    startedAt: string;
+    completedAt: string;
+    totalDurationMs: number;
+    phases?: PhaseTimings;
+    perIteration?: IterationTiming[];
+  };
+
+  // Files
+  files: {
+    modified: string[];
+    created: string[];
+    deleted: string[];
+    totalCount: number;
+  };
+
+  // Validation
+  validation?: {
+    runs: ValidationRun[];
+    totalRuns: number;
+    failures: number;
+  };
+
+  // Scope
+  scope?: {
+    mode: string;
+    violations: number;
+    blockedFiles: string[];
+  };
+
+  // Environment
+  environment?: {
+    nodeVersion?: string;
+    os?: string;
+    ci?: boolean;
+    ciProvider?: string;
+    ciBuildId?: string;
+    ciBranch?: string;
+    ciCommit?: string;
+  };
+}
+
+export interface ReportSummary {
+  runId: string;
+  timestamp: string;
+  taskPath: string;
+  status: 'completed' | 'blocked' | 'failed';
+  iterations: number;
+  totalTokens?: number;
+  estimatedCost?: number;
+  durationMs: number;
+  provider: string;
+  model?: string;
+  filesModified: number;
+}
+
+export interface AggregateMetrics {
+  totalRuns: number;
+  successRate: number;
+  totalTokens: number;
+  totalCost: number;
+  averageIterations: number;
+  averageDuration: number;
+  byStatus: Record<string, number>;
+  mostModifiedFiles: Array<{ file: string; count: number }>;
+}
+
+export interface PhaseSummary {
+  phase: string;
+  totalMs: number;
+  count: number;
+  avgMs: number;
+  maxMs: number;
+  minMs: number;
+  percentage: number;
 }

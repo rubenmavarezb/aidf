@@ -5,6 +5,7 @@ import type {
   ExecutorOptions,
   ExecutorState,
   ExecutorResult,
+  ExecutionReport,
   AidfConfig,
   ExecutorDependencies,
 } from '../types/index.js';
@@ -20,6 +21,9 @@ import { ExecutionPhase } from './phases/execution.js';
 import { PostFlightPhase } from './phases/postflight.js';
 import type { PhaseContext } from './phases/types.js';
 import { AidfError } from './errors.js';
+import { MetricsCollector } from './metrics-collector.js';
+import { ReportWriter } from './report-writer.js';
+import { lookupCostRates } from '../utils/cost.js';
 
 export class Executor {
   private options: ExecutorOptions;
@@ -97,6 +101,24 @@ export class Executor {
 
     this.logger.setContext({ task: taskPath, iteration: 0 });
 
+    // Create metrics collector
+    const costRates = lookupCostRates(
+      this.config.provider?.model,
+      this.config.provider?.type ?? 'claude-cli',
+      this.config.cost
+    );
+    const metrics = new MetricsCollector({
+      taskPath,
+      provider: {
+        type: this.config.provider?.type ?? 'claude-cli',
+        model: this.config.provider?.model,
+      },
+      cwd: this.cwd,
+      maxIterations: this.options.maxIterations,
+      scopeMode: this.options.scopeEnforcement,
+      costRates,
+    });
+
     const ctx: PhaseContext = {
       config: this.config,
       options: this.options,
@@ -104,12 +126,25 @@ export class Executor {
       cwd: this.cwd,
       taskPath,
       deps: this.deps,
+      metrics,
     };
 
     try {
       // Phase 1: PreFlight
+      metrics.startPhase('contextLoading');
       const preFlight = new PreFlightPhase();
       const preFlightResult = await preFlight.execute(ctx);
+      metrics.endPhase('contextLoading');
+
+      // Set context info from preflight
+      if (ctx.state.contextTokens) {
+        metrics.setContextTokens(ctx.state.contextTokens, ctx.state.contextBreakdown);
+      }
+      metrics.setTaskMetadata({
+        taskGoal: preFlightResult.context.task.goal,
+        taskType: preFlightResult.context.task.taskType,
+        roleName: preFlightResult.context.role.name,
+      });
 
       // Update config if it was resolved during preflight
       this.config = ctx.config;
@@ -120,14 +155,20 @@ export class Executor {
 
       // Phase 3: PostFlight
       const postFlight = new PostFlightPhase();
-      return await postFlight.execute(ctx, { preFlightResult, executionResult });
+      const result = await postFlight.execute(ctx, { preFlightResult, executionResult });
+
+      // Persist report
+      result.report = this.persistReport(ctx, metrics, result);
+
+      return result;
     } catch (error) {
       if (error instanceof PreFlightError) {
         this.logger.error(`Failed to resolve config: ${error.message}`);
         this.state.status = 'failed';
         this.state.lastError = error.message;
         this.state.completedAt = new Date();
-        return {
+        metrics.recordError(error);
+        const result: ExecutorResult = {
           success: false,
           status: 'failed',
           iterations: 0,
@@ -135,10 +176,13 @@ export class Executor {
           error: this.state.lastError,
           taskPath,
         };
+        result.report = this.persistReport(ctx, metrics, result);
+        return result;
       }
 
       this.state.status = 'failed';
       this.state.lastError = error instanceof Error ? error.message : 'Unknown error';
+      metrics.recordError(error instanceof Error ? error : String(error));
 
       // Run postflight for failed state
       const postFlight = new PostFlightPhase();
@@ -158,7 +202,42 @@ export class Executor {
         postFlightResult.errorDetails = error.context;
       }
 
+      postFlightResult.report = this.persistReport(ctx, metrics, postFlightResult);
       return postFlightResult;
+    }
+  }
+
+  private persistReport(
+    ctx: PhaseContext,
+    metrics: MetricsCollector,
+    result: ExecutorResult
+  ): ExecutionReport | undefined {
+    try {
+      // Sync status from result
+      const statusMap: Record<string, 'completed' | 'blocked' | 'failed'> = {
+        completed: 'completed',
+        blocked: 'blocked',
+        failed: 'failed',
+      };
+      const reportStatus = statusMap[result.status] ?? 'failed';
+      metrics.setStatus(reportStatus);
+      if (result.blockedReason) {
+        metrics.setBlockedReason(result.blockedReason);
+      }
+
+      // Record file changes
+      for (const file of result.filesModified) {
+        metrics.recordFileChange(file, 'modified');
+      }
+
+      const report = metrics.toReport();
+      const writer = new ReportWriter({ cwd: this.cwd });
+      const reportPath = writer.write(report);
+      this.logger.info(`Report saved: ${reportPath}`);
+      return report;
+    } catch (err) {
+      this.logger.debug(`Failed to save report: ${err instanceof Error ? err.message : err}`);
+      return undefined;
     }
   }
 

@@ -8,6 +8,7 @@ import type {
   BlockedStatus,
   TokenUsageSummary,
 } from '../../types/index.js';
+import { lookupCostRates, calculateCost } from '../../utils/cost.js';
 
 export class PostFlightPhase
   implements ExecutorPhase<PostFlightInput, ExecutorResult>
@@ -205,9 +206,15 @@ export class PostFlightPhase
     }
 
     const totalTokens = inputTokens + outputTokens;
+
+    const rates = lookupCostRates(
+      ctx.config.provider?.model,
+      ctx.config.provider?.type ?? 'claude-cli',
+      ctx.config.cost
+    );
     const estimatedCost =
-      inputTokens > 0 || outputTokens > 0
-        ? (inputTokens / 1_000_000) * 3 + (outputTokens / 1_000_000) * 15
+      (inputTokens > 0 || outputTokens > 0) && rates
+        ? calculateCost(inputTokens, outputTokens, rates)
         : undefined;
 
     return {
@@ -242,6 +249,22 @@ export class PostFlightPhase
 
       if (tu.estimatedCost !== undefined) {
         lines.push(`Est. cost: ~$${tu.estimatedCost.toFixed(2)}`);
+      }
+    }
+
+    // Phase breakdown from metrics
+    if (result.report?.timing.phases) {
+      const phases = result.report.timing.phases;
+      const totalMs = result.report.timing.totalDurationMs;
+      lines.push('');
+      lines.push('Phase Breakdown:');
+      for (const [phase, ms] of Object.entries(phases)) {
+        if (ms !== undefined && ms > 0) {
+          const pct = totalMs > 0 ? Math.round((ms / totalMs) * 100) : 0;
+          const barLen = Math.max(1, Math.round(pct / 5));
+          const bar = '█'.repeat(barLen) + '░'.repeat(20 - barLen);
+          lines.push(`  ${phase.padEnd(16)} ${bar} ${pct}% (${(ms / 1000).toFixed(1)}s)`);
+        }
       }
     }
 

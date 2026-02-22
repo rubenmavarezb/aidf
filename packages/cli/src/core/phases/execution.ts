@@ -75,6 +75,7 @@ export class ExecutionPhase implements ExecutorPhase<PreFlightResult, ExecutionL
       }
 
       this.emitPhase(ctx, 'Executing AI');
+      ctx.metrics?.startPhase('aiExecution');
 
       if (useContinuation && ctx.state.contextTokens) {
         ctx.deps.logger.info(
@@ -135,6 +136,8 @@ export class ExecutionPhase implements ExecutorPhase<PreFlightResult, ExecutionL
         );
       }
 
+      ctx.metrics?.endPhase('aiExecution');
+
       // Track state for next iteration
       iterState.previousOutput = result.output;
       iterState.conversationState =
@@ -148,6 +151,15 @@ export class ExecutionPhase implements ExecutorPhase<PreFlightResult, ExecutionL
         }
         ctx.state.tokenUsage.inputTokens += result.tokenUsage.inputTokens;
         ctx.state.tokenUsage.outputTokens += result.tokenUsage.outputTokens;
+
+        ctx.metrics?.recordTokenUsage(
+          ctx.state.iteration,
+          result.tokenUsage.inputTokens,
+          result.tokenUsage.outputTokens
+        );
+        if (result.tokenUsage.estimated) {
+          ctx.metrics?.setTokensEstimated(true);
+        }
 
         ctx.deps.logger.info(
           `Iteration ${ctx.state.iteration} tokens: input=${result.tokenUsage.inputTokens.toLocaleString()}, output=${result.tokenUsage.outputTokens.toLocaleString()}`
@@ -217,6 +229,7 @@ export class ExecutionPhase implements ExecutorPhase<PreFlightResult, ExecutionL
       const hasCompletionSignal = result.iterationComplete;
 
       this.emitPhase(ctx, 'Checking scope');
+      ctx.metrics?.startPhase('scopeChecking');
 
       // Check scope violations
       if (result.filesChanged.length > 0) {
@@ -229,6 +242,7 @@ export class ExecutionPhase implements ExecutorPhase<PreFlightResult, ExecutionL
 
         if (scopeDecision.action === 'BLOCK') {
           this.log(ctx, `Scope violation: ${scopeDecision.reason}`);
+          ctx.metrics?.recordScopeViolation(scopeDecision.files);
           await this.revertChanges(ctx, scopeDecision.files);
 
           if (hasCompletionSignal) {
@@ -236,11 +250,13 @@ export class ExecutionPhase implements ExecutorPhase<PreFlightResult, ExecutionL
               ctx,
               `AI signaled completion but had scope violations. Violations reverted — accepting completion.`
             );
+            ctx.metrics?.endPhase('scopeChecking');
             ctx.state.status = 'completed';
             return { completedNormally: true, terminationReason: 'completed' };
           }
 
           iterState.consecutiveFailures++;
+          ctx.metrics?.endPhase('scopeChecking');
           this.emitPhase(ctx, 'Scope violation');
           continue;
         }
@@ -253,17 +269,32 @@ export class ExecutionPhase implements ExecutorPhase<PreFlightResult, ExecutionL
           if (!approved) {
             await this.revertChanges(ctx, scopeDecision.files);
             iterState.consecutiveFailures++;
+            ctx.metrics?.endPhase('scopeChecking');
             continue;
           }
           scopeGuard.approve(scopeDecision.files);
         }
       }
 
+      ctx.metrics?.endPhase('scopeChecking');
       this.emitPhase(ctx, 'Validating');
+      ctx.metrics?.startPhase('validation');
 
       // Validate changes
       const validation = await validator.preCommit();
       ctx.state.validationResults.push(validation);
+
+      // Record validation in metrics
+      for (const vr of validation.results) {
+        ctx.metrics?.recordValidation({
+          iteration: ctx.state.iteration,
+          phase: 'pre_commit',
+          command: vr.command,
+          passed: vr.passed,
+          durationMs: vr.duration,
+          exitCode: vr.exitCode,
+        });
+      }
 
       if (!validation.passed) {
         const validationReport = Validator.formatReport(validation);
@@ -278,9 +309,12 @@ export class ExecutionPhase implements ExecutorPhase<PreFlightResult, ExecutionL
         }
 
         iterState.consecutiveFailures++;
+        ctx.metrics?.endPhase('validation');
         this.emitPhase(ctx, 'Validation failed');
         continue;
       }
+
+      ctx.metrics?.endPhase('validation');
 
       // Validation passed — clear any previous validation error
       iterState.lastValidationError = undefined;
@@ -288,12 +322,32 @@ export class ExecutionPhase implements ExecutorPhase<PreFlightResult, ExecutionL
       // Commit if autoCommit is enabled
       if (ctx.options.autoCommit && result.filesChanged.length > 0) {
         this.emitPhase(ctx, 'Committing');
+        ctx.metrics?.startPhase('gitOperations');
         await this.commitChanges(ctx, result.filesChanged, context.task.goal);
+        ctx.metrics?.endPhase('gitOperations');
         ctx.state.filesModified.push(...result.filesChanged);
+
+        // Record file changes in metrics
+        for (const file of result.filesChanged) {
+          ctx.metrics?.recordFileChange(file, 'modified');
+        }
       }
 
       // Reset consecutive failures on success
       iterState.consecutiveFailures = 0;
+
+      // Log per-iteration phase timing in verbose mode
+      if (ctx.options.verbose && ctx.metrics) {
+        const timings = ctx.metrics.toReport().timing.phases;
+        if (timings) {
+          const parts = Object.entries(timings)
+            .filter(([_, ms]) => ms !== undefined && ms > 0)
+            .map(([phase, ms]) => `${phase}: ${((ms as number) / 1000).toFixed(1)}s`);
+          if (parts.length > 0) {
+            ctx.deps.logger.debug(`[profile] ${parts.join(' | ')}`);
+          }
+        }
+      }
 
       // Notify callback
       ctx.options.onIteration?.({ ...ctx.state });
