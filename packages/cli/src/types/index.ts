@@ -481,3 +481,38 @@ export interface SecurityConfig {
   /** Command execution policy for API providers */
   commands?: CommandPolicy;
 }
+
+// === Plan Types ===
+
+export interface PlanTask {
+  filename: string;
+  taskPath: string;
+  description: string;
+  wave: number;
+  dependsOn: string[];
+  completed: boolean;
+  lineNumber: number;
+}
+
+export interface PlanWave {
+  number: number;
+  tasks: PlanTask[];
+}
+
+export interface ParsedPlan {
+  planPath: string;
+  name: string;
+  overview: string;
+  tasks: PlanTask[];
+  waves: PlanWave[];
+}
+
+export interface PlanExecutionResult {
+  success: boolean;
+  planPath: string;
+  totalTasks: number;
+  completedTasks: number;
+  failedTasks: number;
+  blockedTasks: number;
+  skippedTasks: number;
+}
