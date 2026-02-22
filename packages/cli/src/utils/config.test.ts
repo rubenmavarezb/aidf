@@ -656,7 +656,7 @@ describe('validateConfig', () => {
 
   it('should reject invalid provider type', () => {
     const config = { version: 1, provider: { type: 'invalid-provider' } };
-    expect(() => validateConfig(config)).toThrow('Invalid AIDF config');
+    expect(() => validateConfig(config)).toThrow('Invalid config value');
   });
 
   it('should reject invalid scope_enforcement value', () => {
@@ -664,7 +664,7 @@ describe('validateConfig', () => {
       version: 1,
       permissions: { scope_enforcement: 'yolo' },
     };
-    expect(() => validateConfig(config)).toThrow('Invalid AIDF config');
+    expect(() => validateConfig(config)).toThrow('Invalid config value');
   });
 
   it('should reject negative max_iterations', () => {
@@ -672,7 +672,7 @@ describe('validateConfig', () => {
       version: 1,
       execution: { max_iterations: -5 },
     };
-    expect(() => validateConfig(config)).toThrow('Invalid AIDF config');
+    expect(() => validateConfig(config)).toThrow('Invalid config value');
   });
 
   it('should reject non-integer max_iterations', () => {
@@ -680,7 +680,7 @@ describe('validateConfig', () => {
       version: 1,
       execution: { max_iterations: 3.5 },
     };
-    expect(() => validateConfig(config)).toThrow('Invalid AIDF config');
+    expect(() => validateConfig(config)).toThrow('Invalid config value');
   });
 
   it('should reject invalid notification level', () => {
@@ -688,7 +688,7 @@ describe('validateConfig', () => {
       version: 1,
       notifications: { level: 'verbose' },
     };
-    expect(() => validateConfig(config)).toThrow('Invalid AIDF config');
+    expect(() => validateConfig(config)).toThrow('Invalid config value');
   });
 
   it('should provide descriptive error messages', () => {
@@ -702,7 +702,7 @@ describe('validateConfig', () => {
       expect.fail('Should have thrown');
     } catch (error) {
       const msg = (error as Error).message;
-      expect(msg).toContain('Invalid AIDF config');
+      expect(msg).toContain('Invalid config value');
       expect(msg).toContain('version');
     }
   });

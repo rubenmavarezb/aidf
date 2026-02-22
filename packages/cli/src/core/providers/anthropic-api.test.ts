@@ -130,7 +130,9 @@ describe('AnthropicApiProvider', () => {
       const result = await provider.execute('Test prompt');
 
       expect(result.success).toBe(false);
-      expect(result.error).toBe('API Error');
+      expect(result.error).toContain('API Error');
+      expect(result.errorCategory).toBe('provider');
+      expect(result.errorCode).toBe('PROVIDER_CRASH');
       expect(result.iterationComplete).toBe(false);
     });
 

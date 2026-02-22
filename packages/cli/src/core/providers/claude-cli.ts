@@ -2,6 +2,7 @@ import { spawn } from 'child_process';
 import type { Provider, ExecutionResult, ProviderOptions } from './types.js';
 import type { LoadedSkill } from '../../types/index.js';
 import { generateSkillsXml } from '../skill-loader.js';
+import { ProviderError, TimeoutError } from '../errors.js';
 
 /**
  * @description Detects files that have been changed in the working directory using git status.
@@ -26,7 +27,9 @@ async function detectChangedFiles(cwd: string): Promise<string[]> {
       resolve(files);
     });
 
-    proc.on('error', () => resolve([]));
+    proc.on('error', () => {
+      resolve([]);
+    });
   });
 }
 
@@ -108,10 +111,13 @@ export class ClaudeCliProvider implements Provider {
 
       const timeoutId = setTimeout(() => {
         proc.kill('SIGTERM');
+        const err = TimeoutError.iteration(timeout, 0);
         resolve({
           success: false,
           output: stdout,
-          error: `Execution timed out after ${timeout}ms`,
+          error: err.message,
+          errorCategory: err.category,
+          errorCode: err.code,
           filesChanged: [],
           iterationComplete: false,
         });
@@ -124,22 +130,39 @@ export class ClaudeCliProvider implements Provider {
         const filesChanged = filesAfter.filter(f => !filesBefore.includes(f));
         const completionSignal = this.detectCompletionSignal(stdout);
 
-        resolve({
-          success: code === 0,
-          output: stdout,
-          error: stderr || undefined,
-          filesChanged,
-          iterationComplete: completionSignal !== undefined,
-          completionSignal,
-        });
+        if (code !== 0 && code !== null && stderr) {
+          const err = ProviderError.apiError('claude-cli', stderr, code);
+          resolve({
+            success: false,
+            output: stdout,
+            error: stderr,
+            errorCategory: err.category,
+            errorCode: err.code,
+            filesChanged,
+            iterationComplete: completionSignal !== undefined,
+            completionSignal,
+          });
+        } else {
+          resolve({
+            success: code === 0,
+            output: stdout,
+            error: stderr || undefined,
+            filesChanged,
+            iterationComplete: completionSignal !== undefined,
+            completionSignal,
+          });
+        }
       });
 
       proc.on('error', (error) => {
         clearTimeout(timeoutId);
+        const err = ProviderError.crash('claude-cli', error.message);
         resolve({
           success: false,
           output: '',
-          error: `Failed to execute claude: ${error.message}`,
+          error: err.message,
+          errorCategory: err.category,
+          errorCode: err.code,
           filesChanged: [],
           iterationComplete: false,
         });

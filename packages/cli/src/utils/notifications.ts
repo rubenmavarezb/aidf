@@ -76,6 +76,8 @@ export class NotificationService {
       iterations: result.iterations,
       filesModified: result.filesModified,
       error: result.error,
+      errorCategory: result.errorCategory,
+      errorCode: result.errorCode,
       blockedReason: result.blockedReason,
       timestamp: new Date(),
     };
@@ -115,7 +117,10 @@ export class NotificationService {
     if (event.filesModified.length > 0) {
       lines.push(`Files modified: ${event.filesModified.length}`);
     }
-    if (event.error) {
+    if (event.errorCategory) {
+      const prefix = `[${event.errorCategory.toUpperCase()}]`;
+      lines.push(`${prefix} ${event.error ?? 'Unknown error'}`);
+    } else if (event.error) {
       lines.push(`Error: ${event.error}`);
     }
     if (event.blockedReason) {

@@ -2,6 +2,7 @@ import type { ExecutorPhase, PhaseContext, PreFlightResult, ExecutionLoopResult 
 import type { ExecutionResult } from '../providers/types.js';
 import { buildIterationPrompt, buildContinuationPrompt } from '../providers/claude-cli.js';
 import { Validator } from '../validator.js';
+import { TimeoutError, GitError } from '../errors.js';
 
 interface IterationState {
   consecutiveFailures: number;
@@ -191,6 +192,22 @@ export class ExecutionPhase implements ExecutorPhase<PreFlightResult, ExecutionL
           };
         }
 
+        // Handle by error category if available
+        if (result.errorCategory) {
+          const handled = this.handleCategorizedError(ctx, result, iterState);
+          if (handled) {
+            ctx.options.onIteration?.({ ...ctx.state });
+            if (handled === 'abort') {
+              return {
+                completedNormally: false,
+                terminationReason: 'max_failures',
+                lastError: result.error,
+              };
+            }
+            continue;
+          }
+        }
+
         this.log(ctx, `Provider execution failed: ${result.error}`);
         iterState.consecutiveFailures++;
         ctx.options.onIteration?.({ ...ctx.state });
@@ -321,6 +338,79 @@ export class ExecutionPhase implements ExecutorPhase<PreFlightResult, ExecutionL
     return { completedNormally: false };
   }
 
+  private handleCategorizedError(
+    ctx: PhaseContext,
+    result: ExecutionResult,
+    iterState: IterationState
+  ): 'continue' | 'abort' | null {
+    switch (result.errorCategory) {
+      case 'config':
+      case 'permission':
+        // Fatal errors — abort immediately
+        this.log(ctx, `Fatal error [${result.errorCategory}/${result.errorCode}]: ${result.error}`);
+        ctx.state.status = 'failed';
+        ctx.state.lastError = result.error;
+        return 'abort';
+
+      case 'timeout':
+        // Retryable — increment failure counter
+        this.log(ctx, `Timeout [${result.errorCode}]: ${result.error}`);
+        iterState.consecutiveFailures++;
+        return 'continue';
+
+      case 'provider':
+        if (result.errorCode === 'PROVIDER_RATE_LIMIT') {
+          // Rate limit — do NOT increment failure counter, wait
+          this.log(ctx, 'Rate limited, waiting 5s before retry...');
+          return 'continue';
+        }
+        if (result.errorCode === 'PROVIDER_NOT_AVAILABLE') {
+          // Provider unavailable — abort
+          this.log(ctx, `Provider not available: ${result.error}`);
+          ctx.state.status = 'failed';
+          ctx.state.lastError = result.error;
+          return 'abort';
+        }
+        // PROVIDER_CRASH, PROVIDER_API_ERROR — retry
+        this.log(ctx, `Provider error [${result.errorCode}]: ${result.error}`);
+        iterState.consecutiveFailures++;
+        return 'continue';
+
+      case 'git':
+        if (result.errorCode === 'GIT_REVERT_FAILED') {
+          // Corrupted state — abort
+          this.log(ctx, `Git revert failed — state may be corrupted: ${result.error}`);
+          ctx.state.status = 'failed';
+          ctx.state.lastError = result.error;
+          return 'abort';
+        }
+        // GIT_COMMIT_FAILED, GIT_PUSH_FAILED — retry, then warn
+        this.log(ctx, `Git error [${result.errorCode}]: ${result.error}`);
+        iterState.consecutiveFailures++;
+        return 'continue';
+
+      case 'scope':
+        if (result.errorCode === 'SCOPE_USER_DENIED') {
+          // User denied — abort
+          this.log(ctx, `User denied scope change: ${result.error}`);
+          ctx.state.status = 'failed';
+          ctx.state.lastError = result.error;
+          return 'abort';
+        }
+        // SCOPE_FORBIDDEN, SCOPE_OUTSIDE_ALLOWED — retry
+        iterState.consecutiveFailures++;
+        return 'continue';
+
+      case 'validation':
+        // Feed error back to AI — existing behavior
+        iterState.consecutiveFailures++;
+        return 'continue';
+
+      default:
+        return null;
+    }
+  }
+
   private emitPhase(ctx: PhaseContext, phase: string): void {
     ctx.options.onPhase?.({
       phase,
@@ -351,13 +441,16 @@ export class ExecutionPhase implements ExecutorPhase<PreFlightResult, ExecutionL
 
     const timeoutPromise = new Promise<ExecutionResult>((resolve) => {
       timer = setTimeout(() => {
+        const err = TimeoutError.iteration(timeoutMs, ctx.state.iteration);
         ctx.deps.logger.warn(
           `Iteration ${ctx.state.iteration} timed out after ${Math.round(timeoutMs / 1000)}s`
         );
         resolve({
           success: false,
           output: '',
-          error: `Timeout: iteration exceeded ${Math.round(timeoutMs / 1000)}s limit`,
+          error: err.message,
+          errorCategory: err.category,
+          errorCode: err.code,
           filesChanged: [],
           iterationComplete: false,
         });
@@ -375,7 +468,12 @@ export class ExecutionPhase implements ExecutorPhase<PreFlightResult, ExecutionL
 
   private async revertChanges(ctx: PhaseContext, files: string[]): Promise<void> {
     this.log(ctx, `Reverting changes to: ${files.join(', ')}`);
-    await ctx.deps.git.checkout(['--', ...files]);
+    try {
+      await ctx.deps.git.checkout(['--', ...files]);
+    } catch (error) {
+      const rawError = error instanceof Error ? error.message : String(error);
+      throw GitError.revertFailed(files, rawError);
+    }
   }
 
   private async commitChanges(
@@ -386,8 +484,13 @@ export class ExecutionPhase implements ExecutorPhase<PreFlightResult, ExecutionL
     const prefix = ctx.config.git?.commit_prefix ?? 'aidf:';
     const message = `${prefix} ${taskGoal.slice(0, 50)}${taskGoal.length > 50 ? '...' : ''}`;
 
-    await ctx.deps.git.add(files);
-    await ctx.deps.git.commit(message);
-    this.log(ctx, `Committed: ${message}`);
+    try {
+      await ctx.deps.git.add(files);
+      await ctx.deps.git.commit(message);
+      this.log(ctx, `Committed: ${message}`);
+    } catch (error) {
+      const rawError = error instanceof Error ? error.message : String(error);
+      throw GitError.commitFailed(files, rawError);
+    }
   }
 }

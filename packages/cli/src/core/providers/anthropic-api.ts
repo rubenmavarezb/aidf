@@ -9,6 +9,7 @@ import type {
 import { FILE_TOOLS } from './types.js';
 import { ToolHandler } from './tool-handler.js';
 import { ConversationWindow, type GenericMessage } from './conversation-window.js';
+import { ProviderError, PermissionError } from '../errors.js';
 
 /**
  * Provider that uses Anthropic API directly with tool calling
@@ -147,10 +148,13 @@ export class AnthropicApiProvider implements Provider {
         conversationMetrics,
       };
     } catch (error) {
+      const categorized = this.categorizeError(error);
       return {
         success: false,
         output: fullOutput,
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: categorized.message,
+        errorCategory: categorized.category,
+        errorCode: categorized.code,
         filesChanged: this.toolHandler.getChangedFiles(),
         iterationComplete: false,
         tokenUsage: totalInputTokens > 0 || totalOutputTokens > 0
@@ -160,6 +164,28 @@ export class AnthropicApiProvider implements Provider {
         conversationMetrics,
       };
     }
+  }
+
+  private categorizeError(error: unknown): ProviderError | PermissionError {
+    // Check for status-based errors (works with both real SDK errors and mocks)
+    const err = error as { status?: number; message?: string };
+    const status = err.status;
+    const message = err.message ?? (error instanceof Error ? error.message : 'Unknown error');
+
+    if (status !== undefined) {
+      if (status === 429) {
+        return ProviderError.rateLimit('anthropic-api', message);
+      }
+      if (status === 401 || status === 403) {
+        return PermissionError.apiAuth('anthropic-api');
+      }
+      if (status >= 500) {
+        return ProviderError.apiError('anthropic-api', message, status);
+      }
+      return ProviderError.apiError('anthropic-api', message, status);
+    }
+
+    return ProviderError.crash('anthropic-api', message);
   }
 
   private convertToolsToAnthropicFormat(tools: ToolDefinition[]): Anthropic.Tool[] {
