@@ -29,3 +29,4 @@ dist/
 .ai/tasks/*.log
 .ai/tasks/*.tmp
 .ai/.cache/
+.ai/reports/
