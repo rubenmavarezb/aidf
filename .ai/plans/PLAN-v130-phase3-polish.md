@@ -361,13 +361,17 @@ A post-execution verification pass that uses a separate AI call (verifier model)
   **Scope:** `packages/cli/src/commands/verify.ts`, `packages/cli/src/index.ts`
   **Tests:** `packages/cli/src/commands/verify.test.ts`
 
+### Phase 4: Dedicated Integration & E2E Tests
+
+- [ ] `166-v130-polish-tests.md` — Integration and E2E tests for all three feature areas. **Model Profiles** (8 tests): profile resolution per task type, custom override, explicit model precedence, cost multiplier, config integration. **Codebase Mapping** (9 tests): TypeScript/React/Next.js detection, architecture detection, convention detection, boundary detection, command detection, AGENTS.md generation, confidence markers, monorepo detection. **Verification Loop** (8 tests): anti-pattern detection (TODO, FIXME, console.log, debugger, empty function), clean file, DoD extraction, verification prompt building, verdict determination. **25+ test cases total.**
+
 ## Dependencies
 
 ```
 130 ──────┬──> 131 ──> 132
           │
 133 ──────┼──> 134 ──> 135
-          │
+          │                  ──> 166
 130 ──────┼──> 136 ──┬──> 137
           │          └──> 138
           └──────────────────┘
@@ -381,6 +385,7 @@ A post-execution verification pass that uses a separate AI call (verifier model)
 - **136** (verifier) depends on 130 (uses model profiles for verifier model)
 - **137** (verification integration) depends on 136
 - **138** (verify command) depends on 136
+- **166** (E2E tests) depends on 130-138 (all implementation tasks)
 
 ## Risks
 
